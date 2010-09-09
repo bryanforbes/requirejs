@@ -1,4 +1,4 @@
-/**
+/** vim: et:ts=4:sw=4:sts=4
  * @license RequireJS Copyright (c) 2004-2010, The Dojo Foundation All Rights Reserved.
  * Available via the MIT, GPL or new BSD license.
  * see: http://github.com/jrburke/requirejs for details
@@ -91,26 +91,26 @@ var require;
      * be specified to execute when all of those dependencies are available.
      */
     require = function (deps, callback, contextName) {
-		var config;
-		if (typeof deps === "string" && !isFunction(callback)) {
-			//Just return the module wanted. In this scenario, the
-			//second arg (if passed) is just the contextName.
-			return require.get(deps, callback);
-		}
-		// Dependencies first
-		if (!require.isArray(deps)) {
-			// deps is a config object
-			config = deps;
-			if (require.isArray(callback)) {
-				// Adjust args if there are dependencies
-				deps = callback;
-				callback = contextName;
-				contextName = arguments[3];
-			} else {
-				deps = [];
-			}
-		}
-		return _work(null, null, deps, callback, config, contextName);
+        var config;
+        if (typeof deps === "string" && !isFunction(callback)) {
+            //Just return the module wanted. In this scenario, the
+            //second arg (if passed) is just the contextName.
+            return require.get(deps, callback);
+        }
+        // Dependencies first
+        if (!require.isArray(deps)) {
+            // deps is a config object
+            config = deps;
+            if (require.isArray(callback)) {
+                // Adjust args if there are dependencies
+                deps = callback;
+                callback = contextName;
+                contextName = arguments[3];
+            } else {
+                deps = [];
+            }
+        }
+        return _work(null, null, deps, callback, config, contextName);
     };
     
     //Alias for caja compliance internally -
@@ -136,44 +136,44 @@ var require;
      * return a value to define the module corresponding to the first argument's
      * name.
      */
-	req.def = function (name, deps, callback, contextName) {
-		var pluginPrefix, index;
-		if (typeof name !== "string") {
-			// Anonymous module
-			contextName = callback;
-			callback = deps;
-			deps = name;
-			name = null;
-		} else {
-			// Pull off any plugin prefix.
+    req.def = function (name, deps, callback, contextName) {
+        var pluginPrefix, index;
+        if (typeof name !== "string") {
+            // Anonymous module
+            contextName = callback;
+            callback = deps;
+            deps = name;
+            name = null;
+        } else {
+            // Pull off any plugin prefix.
             index = name.indexOf("!");
             if (index !== -1) {
                 pluginPrefix = name.substring(0, index);
                 name = name.substring(index + 1, name.length);
             }
-		}
-		if (!req.isArray(deps)) {
-			// No dependencies
-			contextName = callback;
-			callback = deps;
-			deps = [];
-		}
-		return _work(name, pluginPrefix, deps, callback, null, contextName);
-	};
+        }
+        if (!req.isArray(deps)) {
+            // No dependencies
+            contextName = callback;
+            callback = deps;
+            deps = [];
+        }
+        return _work(name, pluginPrefix, deps, callback, null, contextName);
+    };
 
-	function _work(name, pluginPrefix, deps, callback, config, contextName) {
+    function _work(name, pluginPrefix, deps, callback, config, contextName) {
         //Grab the context, or create a new one for the given context name.
-		var contextName = contextName ? contextName : (config && config.context ? config.context : s.ctxName),
-			context = s.contexts[contextName], newContext, contextRequire, loaded,
-			canSetContext, prop, newLength, outDeps, mods, paths, i, deferMods;
+        var contextName = contextName ? contextName : (config && config.context ? config.context : s.ctxName),
+            context = s.contexts[contextName], newContext, contextRequire, loaded,
+            canSetContext, prop, newLength, outDeps, mods, paths, i, deferMods;
 
-		if (name) {
+        if (name) {
             //If module already defined for context, or already waiting to be
             //evaluated, leave.
-			if (context && (context.defined[name] || context.waiting[name])) {
-				return req;
-			}
-		}
+            if (context && (context.defined[name] || context.waiting[name])) {
+                return req;
+            }
+        }
 
         //>>excludeStart("requireExcludeContext", pragmas.requireExcludeContext);
         if (contextName !== s.ctxName) {
@@ -385,7 +385,7 @@ var require;
             context.loaded[name] = true;
         }
         return req;
-	}
+    }
 
     /**
      * Simple function to mix in properties from source into target,
