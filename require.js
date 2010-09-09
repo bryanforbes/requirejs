@@ -110,7 +110,7 @@ var require;
                 deps = [];
             }
         }
-        return _work(null, null, deps, callback, config, contextName);
+        return _work(null, deps, callback, config, contextName);
     };
     
     //Alias for caja compliance internally -
@@ -144,13 +144,6 @@ var require;
             callback = deps;
             deps = name;
             name = null;
-        } else {
-            // Pull off any plugin prefix.
-            index = name.indexOf("!");
-            if (index !== -1) {
-                pluginPrefix = name.substring(0, index);
-                name = name.substring(index + 1, name.length);
-            }
         }
         if (!req.isArray(deps)) {
             // No dependencies
@@ -158,16 +151,25 @@ var require;
             callback = deps;
             deps = [];
         }
-        return _work(name, pluginPrefix, deps, callback, null, contextName);
+        return _work(name, deps, callback, null, contextName);
     };
 
-    function _work(name, pluginPrefix, deps, callback, config, contextName) {
+    function _work(name, deps, callback, config, contextName) {
         //Grab the context, or create a new one for the given context name.
         var contextName = contextName ? contextName : (config && config.context ? config.context : s.ctxName),
-            context = s.contexts[contextName], newContext, contextRequire, loaded,
-            canSetContext, prop, newLength, outDeps, mods, paths, i, deferMods;
+            context = s.contexts[contextName], newContext, contextRequire, loaded, pluginPrefix,
+            canSetContext, prop, newLength, outDeps, mods, paths, index, i, deferMods;
 
         if (name) {
+            //>>excludeStart("requireExcludePlugin", pragmas.requireExcludePlugin);
+            // Pull off any plugin prefix.
+            index = name.indexOf("!");
+            if (index !== -1) {
+                pluginPrefix = name.substring(0, index);
+                name = name.substring(index + 1, name.length);
+            }
+            //>>excludeEnd("requireExcludePlugin");
+
             //If module already defined for context, or already waiting to be
             //evaluated, leave.
             if (context && (context.defined[name] || context.waiting[name])) {
