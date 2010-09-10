@@ -20,7 +20,7 @@ var require;
             empty = {}, s,
             i, defContextName = "_", contextLoads = [],
             scripts, script, rePkg, src, m, dataMain, cfg = {}, setReadyState,
-            readyRegExp = /^(complete|loaded)$/,
+            readyRegExp = /^(complete|loaded)$/, main,
             isBrowser = !!(typeof window !== "undefined" && navigator && document),
             isWebWorker = !isBrowser && typeof importScripts !== "undefined",
             ostring = Object.prototype.toString, scrollIntervalId, req, baseElement;
@@ -110,9 +110,9 @@ var require;
                 deps = [];
             }
         }
-        return _work(null, deps, callback, config, contextName);
+        return main(null, deps, callback, config, contextName);
     };
-    
+
     //Alias for caja compliance internally -
     //specifically: "Dynamically computed names should use require.async()"
     //even though this spec isn't really decided on.
@@ -137,28 +137,22 @@ var require;
      * name.
      */
     req.def = function (name, deps, callback, contextName) {
-        var pluginPrefix, index;
-        if (typeof name !== "string") {
-            // Anonymous module
-            contextName = callback;
-            callback = deps;
-            deps = name;
-            name = null;
-        }
         if (!req.isArray(deps)) {
             // No dependencies
             contextName = callback;
             callback = deps;
             deps = [];
         }
-        return _work(name, deps, callback, null, contextName);
+        return main(name, deps, callback, null, contextName);
     };
 
-    function _work(name, deps, callback, config, contextName) {
+    main = function (name, deps, callback, config, contextName) {
         //Grab the context, or create a new one for the given context name.
-        var contextName = contextName ? contextName : (config && config.context ? config.context : s.ctxName),
-            context = s.contexts[contextName], newContext, contextRequire, loaded, pluginPrefix,
+        var context = s.contexts[contextName], newContext, contextRequire, loaded, pluginPrefix,
             canSetContext, prop, newLength, outDeps, mods, paths, index, i, deferMods;
+
+        contextName = contextName ? contextName : (config && config.context ? config.context : s.ctxName);
+        context = s.contexts[contextName];
 
         if (name) {
             //>>excludeStart("requireExcludePlugin", pragmas.requireExcludePlugin);
