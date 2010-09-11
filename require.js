@@ -8,15 +8,12 @@
 /*global window: false, document: false, navigator: false,
 setTimeout: false, traceDeps: true, clearInterval: false, self: false,
 setInterval: false, importScripts: false */
-
-//>>includeStart("useStrict", pragmas.useStrict);
 "use strict";
-//>>includeEnd("useStrict");
 
 var require;
 (function () {
     //Change this version number for each release.
-    var version = "0.12.0+",
+    var version = "0.13.0",
             empty = {}, s,
             i, defContextName = "_", contextLoads = [],
             scripts, script, rePkg, src, m, dataMain, cfg = {}, setReadyState,
@@ -809,7 +806,9 @@ var require;
         //The slash is important for protocol-less URLs as well as full paths.
         if (moduleName.indexOf(":") !== -1 || moduleName.charAt(0) === '/' || req.jsExtRegExp.test(moduleName)) {
             //Just a plain path, not module name lookup, so just return it.
-            return moduleName;
+            //Add extension if it is included. This is a bit wonky, only non-.js things pass
+            //an extension, this method probably needs to be reworked.
+            return moduleName + (ext ? ext : "");
         } else if (moduleName.charAt(0) === ".") {
             return req.onError(new Error("require.nameToUrl does not handle relative module names (ones that start with '.' or '..')"));
         } else {
