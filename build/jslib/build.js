@@ -397,8 +397,6 @@ var build, buildBaseConfig;
         return config;
     };
 
-    build.resumeRegExp = /require\s*\.\s*resume\s*\(\s*\)(;)?/g;
-
     /**
      * finds the module being built/optimized with the given moduleName,
      * or returns null.
@@ -483,8 +481,12 @@ var build, buildBaseConfig;
         for (prop in layer.buildPathMap) {
             if (layer.buildPathMap.hasOwnProperty(prop)) {
                 url = layer.buildPathMap[prop];
+                //Always store the url to module name mapping for use later,
+                //particularly for anonymous modules and tracking down files that
+                //did not call require.def to define a module
+                layer.buildFileToModule[url] = prop;
+
                 if (!layer.loadedFiles[url]) {
-                    layer.buildFileToModule[url] = prop;
                     //Do not add plugins to build file paths since they will
                     //be added later, near the top of the module layer.
                     if (prop.indexOf("require/") !== 0) {
@@ -520,8 +522,9 @@ var build, buildBaseConfig;
     build.flattenModule = function (module, layer, config) {
         var buildFileContents = "", requireContents = "",
             pluginContents = "", pluginBuildFileContents = "", includeRequire,
+            anonDefRegExp = /require\s*\.\s*def\s*\(\s*(\[|f|\{)/,
             prop, path, reqIndex, fileContents, currContents,
-            i, needPause, placeHolderModName, specified;
+            i, moduleName, specified, deps;
 
         //Use override settings, particularly for pragmas
         if (module.override) {
@@ -544,9 +547,6 @@ var build, buildBaseConfig;
         }
         if (includeRequire) {
             requireContents = pragma.process(config.requireUrl, fileUtil.readFile(config.requireUrl), config);
-            if (layer.buildFilePaths.length && !config.skipModuleInsertion) {
-                requireContents += "require.pause();\n";
-            }
             buildFileContents += "require.js\n";
         }
 
@@ -581,16 +581,33 @@ var build, buildBaseConfig;
         //Write the built module to disk, and build up the build output.
         fileContents = "";
         for (i = 0; (path = layer.buildFilePaths[i]); i++) {
-            //Add the contents but remove any pragmas and require.pause/resume calls.
-            currContents = pragma.process(path, fileUtil.readFile(path), config);
-            needPause = build.resumeRegExp.test(currContents);
+            moduleName = layer.buildFileToModule[path];
 
-            //If this is the first file, and require() is not part of the file
-            //and require() is not added later at the end to the top of the file,
-            //need to start off with a require.pause() call.
-            if (i === 0 && layer.existingRequireUrl !== path && !includeRequire && !config.skipModuleInsertion) {
-                fileContents += "require.pause();\n";
-            }
+            //Add the contents but remove any pragmas.
+            currContents = pragma.process(path, fileUtil.readFile(path), config);
+
+            //If anonymous module, insert the module name.
+            currContents = currContents.replace(anonDefRegExp, function (match, suffix) {
+                layer.modulesWithNames[moduleName] = true;
+
+                //Look for CommonJS require calls inside the function if this is
+                //an anonymous require.def call that just has a function registered.
+                deps = null;
+                if (suffix.indexOf('f') !== -1) {
+                    deps = parse.getAnonDeps(path, currContents);
+                    if (deps.length) {
+                        deps = deps.map(function (dep) {
+                            return "'" + dep + "'";
+                        });
+                    } else {
+                        deps = null;
+                    }
+                }
+
+                return "require.def('" + moduleName + "'," +
+                       (deps ? ('[' + deps.toString() + '],') : '') +
+                       suffix;
+            });
 
             fileContents += currContents;
 
@@ -598,10 +615,9 @@ var build, buildBaseConfig;
             //Some files may not have declared a require module, and if so,
             //put in a placeholder call so the require does not try to load them
             //after the module is processed.
-            placeHolderModName = layer.buildFileToModule[path];
             //If we have a name, but no defined module, then add in the placeholder.
-            if (placeHolderModName && !layer.modulesWithNames[placeHolderModName] && !config.skipModuleInsertion) {
-                fileContents += 'require.def("' + placeHolderModName + '", function(){});\n';
+            if (moduleName && !layer.modulesWithNames[moduleName] && !config.skipModuleInsertion) {
+                fileContents += 'require.def("' + moduleName + '", function(){});\n';
             }
 
             //If we have plugins but are not injecting require.js,
@@ -611,22 +627,7 @@ var build, buildBaseConfig;
                 fileContents += pluginContents;
                 buildFileContents += pluginBuildFileContents;
                 pluginContents = "";
-                if (!config.skipModuleInsertion) {
-                    fileContents += "require.pause();\n";
-                }
             }
-
-            //If the file contents had a require.resume() we need to now pause
-            //dependency resolution for the rest of the files. Multiple require.pause()
-            //calls are OK.
-            if (needPause && !config.skipModuleInsertion) {
-                fileContents += "require.pause();\n";
-            }
-        }
-
-        //Resume dependency resolution
-        if (layer.buildFilePaths.length && !config.skipModuleInsertion) {
-            fileContents += "\nrequire.resume();\n";
         }
 
         //Add the require file contents to the head of the file.

@@ -1,10 +1,20 @@
 - Converted Dojo release: gfx dojo.requireIf
 - anonymous modules:
-  - check rhino, node, webworkers, make sure they do the assignment in the right places.
-  - check parse.js code to make sure we find anon require.def calls.
-  - Make sure to inject the name of the module in a built layer.
-  - get rid of pause/resume
   - require.modify does not allow anonymous?
+  - Does building an anonymous i18n bundle into a layer work?
+  - Verify transportD adapter works without the pause/resume calls.
+  - Support the require.def(function(require, exports, module){}) variant
+    - AMD *must* order function args as require, exports, module.
+    - Document this in API.md, along with normal anonymous modules:
+      Create API page for those using just CommonJS stuff.
+
+- FF2: priority test on empty cache fails?
+- IE9 preview: the order plugin seems to be failing.
+
+- Allow module names that match Object.prototype method names?
+- browser test for loading css?
+- config option, noCache: true, to enable cache busting for misbehaved servers?
+
 - loading packages:
   - plug in package config options
   - use package config in nameToUrl
@@ -17,10 +27,6 @@
 - include i18n and text plugins in node integration. Make sure text plugin works?
 - Look at jquery ui adapter
 - jquery as a module
-
-- Expore allowing require("./something") inside function callbacks.
-  - it means a specific require() function for each module asking for require
-  - require.nameToUrl should also allow the relative IDs then.
 
 - require.nameToUrl convertDojo.js for dojo.moduleUrl("dojo", "resources/blank.gif")
   would be cool to pass require.nameToUrl("dojo/resources/blank.gif") and have that work. Why is .js assumed?

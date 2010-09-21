@@ -15,7 +15,6 @@
 * [Advanced Usage](#advanced)
     * [Multiversion Support](#multiversion)
     * [Loading Code After Page Load](#afterload)
-    * [require.pause()/require.resume() for Build Layers](#pauseresume)
     * [Module Modifiers](#modifiers)
         * [Modifier Registration](#modregister)
         * [Modifier Definition](#moddef)
@@ -367,8 +366,6 @@ If no baseUrl is passed in, the path to require.js is used as the baseUrl path. 
 
 **priority**: An array of module/file names to load immediately, before tracing down any other dependencies. This allows you to set up a small set of files that are downloaded in parallel that contain most of the modules and their dependencies already built in. More information is in the [Optimization FAQ, Priority Downloads](faq-optimization#priority).
 
-**anon**: As of version 0.14. Allows loading files that use require.def without using a module name. By default it is false, to allow easy loading of traditional browser scripts. However, if it is set to true, only scripts that use require.def can be loaded -- things will break if you use anon: true and load a script that does not use require.def to define a module. It may not break right away, but an insidious runtime error is waiting to happen.
-
 # <a name="pageload">Page Load Event Support</a>
 
 require.js also has a method for notifying your code when the page has loaded. require.js uses the DOMContentLoaded event for browsers that support it, or window onload for browsers that do not.
@@ -395,7 +392,6 @@ Some advanced features:
 
 * Multiversion support
 * Loading code after page load
-* require.pause()/require.resume() for build layers/bundles
 * Module Modifiers
 * Rhino support
 
@@ -449,36 +445,6 @@ Note that "require" is specified as a dependency for the module. This allows the
 ## <a name="afterload">Loading Code After Page Load</a>
 
 The example above in the **Multiversion Support** section shows how code can later be loaded by nested require() calls. 
-
-## <a name="pauseresume">require.pause()/require.resume() for Build Layers</a>
-
-If you want to include many modules that use require.def() in one script, and those modules may depend on each other, then use require.pause() before the set of require calls to prevent require.js from tracing dependencies on each require call. When all the require calls have finished in the file, call require.resume() to have the dependencies properly traced.
-
-Only use require.pause() and require.resume() on a file-by-file basis. Do not use require.pause() in one file and require.resume() in another file. Multiple files can call require.pause()/resume() combinations though.
-
-Example:
-
-    require.pause();
-    
-    require.def("alpha",
-        ["beta"],
-        function (beta) {
-            return {
-                name: "alpha",
-                betaName: beta.name
-            };
-        }
-    );
-    
-    require.def("beta",
-        {
-            name: "beta"
-        }
-    );
-
-    require.resume();
-
-If require.pause() and require.resume() were not used, then the require.def() call to define "alpha" would have tried to load "beta" via another network/file IO call.
 
 ## <a name="modifiers">Module Modifiers</a>
 

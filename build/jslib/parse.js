@@ -126,6 +126,88 @@ var parse;
     };
 
     /**
+     * Finds require("") calls inside a CommonJS anonymous module wrapped in a
+     * require.def(function(require, exports, module){}) wrapper. These dependencies
+     * will be added to a modified require.def call that lists the dependencies
+     * on the outside of the function.
+     * @param {String} fileName
+     * @param {String} fileContents
+     * @returns {Array} an array of module names that are dependencies. Always
+     * returns an array, but could be of length zero.
+     */
+    parse.getAnonDeps = function (fileName, fileContents) {
+        var jsSourceFile = closurefromCode(String(fileName), String(fileContents)),
+            astRoot = compiler.parse(jsSourceFile),
+            deps = [],
+            defFunc = parse.findAnonRequireDefCallback(astRoot);
+        
+        //Now look inside the def call's function for require calls.
+        if (defFunc) {
+            parse.findRequireDepNames(defFunc, deps);
+
+            //If no deps, still add the standard CommonJS require, exports, module,
+            //in that order, to the deps.
+            deps = ["require", "exports", "module"].concat(deps);
+        }
+
+        return deps;
+    };
+
+    /**
+     * Finds the function in require.def(function (require, exports, module){});
+     * @param {Packages.com.google.javascript.rhino.Node} node
+     * @returns {Boolean}
+     */
+
+    parse.findAnonRequireDefCallback = function (node) {
+        var methodName, func, callback, i, n;
+
+        if (node.getType() === GETPROP &&
+            node.getFirstChild().getType() === NAME &&
+            nodeString(node.getFirstChild()) === "require") {
+
+            methodName = nodeString(node.getChildAtIndex(1));
+            if (methodName === "def") {
+                func = node.getLastSibling();
+                if (func.getType() === FUNCTION) {
+                    //Bingo.
+                    return func;
+                }
+            }
+        }
+
+        //Check child nodes
+        for (i = 0; (n = node.getChildAtIndex(i)); i++) {
+            if ((callback = parse.findAnonRequireDefCallback(n))) {
+                return callback;
+            }
+        }
+
+        return null;
+    };
+
+    parse.findRequireDepNames = function (node, deps) {
+        var moduleName, i, n;
+
+        if (node.getType() === CALL) {
+            if (node.getFirstChild().getType() === NAME &&
+                nodeString(node.getFirstChild()) === "require") {
+
+                //It is a plain require() call.
+                moduleName = node.getChildAtIndex(1);
+                if (moduleName.getType() === STRING) {
+                    deps.push(nodeString(moduleName));
+                }
+            }
+        }
+
+        //Check child nodes
+        for (i = 0; (n = node.getChildAtIndex(i)); i++) {
+            parse.findRequireDepNames(n, deps);
+        }
+    };
+
+    /**
      * Determines if a given node contains a require() definition.
      * @param {Packages.com.google.javascript.rhino.Node} node
      * @returns {Boolean}
@@ -206,17 +288,21 @@ var parse;
                     //A require.def() call
                     name = call.getChildAtIndex(1);
                     deps = call.getChildAtIndex(2);
-    
+
                     //If name is an array, it means it is an anonymous module,
-                    //so adjust args appropriately.
+                    //so adjust args appropriately. An anonymous module could
+                    //have a FUNCTION as the name type, but just ignore those
+                    //since we just want to find dependencies.
+                    //TODO: CHANGE THIS if/when support using a tostring
+                    //on function to find CommonJS dependencies.
                     if (name.getType() === ARRAYLIT) {
                         deps = name;
                     }
 
-                    if (!validateDeps(deps)) {
+                    if (deps && !validateDeps(deps)) {
                         return null;
                     }
-    
+
                     return parse.nodeToString(call);
                 } else if (methodName === "modify") {
 

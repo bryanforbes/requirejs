@@ -4,7 +4,7 @@
  * see: http://github.com/jrburke/requirejs for details
  */
 //laxbreak is true to allow build pragmas to change some statements.
-/*jslint plusplus: false, nomen: false, laxbreak: true */
+/*jslint plusplus: false, nomen: false, laxbreak: true, regexp: false */
 /*global window: false, document: false, navigator: false,
 setTimeout: false, traceDeps: true, clearInterval: false, self: false,
 setInterval: false, importScripts: false */
@@ -17,12 +17,16 @@ var require;
             empty = {}, s,
             i, defContextName = "_", contextLoads = [],
             scripts, script, rePkg, src, m, dataMain, cfg = {}, setReadyState,
-            readyRegExp = /^(complete|loaded)$/, main,
+            readyRegExp = /^(complete|loaded)$/,
+            commentRegExp = /(\/\*([\s\S]*?)\*\/|\/\/(.*)$)/mg,
+            cjsRequireRegExp = /require\(["']([\w-_\.\/]+)["']\)/g,
+            main,
             isBrowser = !!(typeof window !== "undefined" && navigator && document),
             isWebWorker = !isBrowser && typeof importScripts !== "undefined",
             ostring = Object.prototype.toString,
-            aps = Array.prototype.slice, scrollIntervalId, req, baseElement,
-            defQueue = [];
+            ap = Array.prototype,
+            aps = ap.slice, scrollIntervalId, req, baseElement,
+            defQueue = [], useInteractive = false, currentlyAddingScript;
 
     function isFunction(it) {
         return ostring.call(it) === "[object Function]";
@@ -39,21 +43,6 @@ var require;
             cfg = require;
         }
     }
-
-    //>>excludeStart("requireExcludeContext", pragmas.requireExcludeContext);
-    function makeContextFunc(name, contextName, force) {
-        return function () {
-            //A version of a require function that uses the current context.
-            //If last arg is a string, then it is a context.
-            //If last arg is not a string, then add context to it.
-            var args = [].concat(aps.call(arguments, 0));
-            if (force || typeof arguments[arguments.length - 1] !== "string") {
-                args.push(contextName);
-            }
-            return (name ? require[name] : require).apply(null, args);
-        };
-    }
-    //>>excludeEnd("requireExcludeContext");
     
     //>>excludeStart("requireExcludePlugin", pragmas.requireExcludePlugin);
     /**
@@ -74,10 +63,59 @@ var require;
             waiting.push(obj);
 
             //Load the module
-            context.defined.require(["require/" + prefix]);
+            req(["require/" + prefix], context.contextName);
         }
     }
     //>>excludeEnd("requireExcludePlugin");
+
+    /**
+     * Convenience method to call main for a require.def call that was put on
+     * hold in the defQueue.
+     */
+    function callDefMain(args, context) {
+        main.apply(req, args);
+        //Mark the module loaded. Must do it here in addition
+        //to doing it in require.def in case a script does
+        //not call require.def
+        context.loaded[args[0]] = true;
+    }
+
+    /**
+     * Resumes tracing of dependencies and then checks if everything is loaded.
+     */
+    function resume(context) {
+        var args, i, paused = s.paused;
+        if (context.scriptCount <= 0) {
+            //Synchronous envs will push the number below zero with the
+            //decrement above, be sure to set it back to zero for good measure.
+            //require() calls that also do not end up loading scripts could
+            //push the number negative too.
+            context.scriptCount = 0;
+
+            //Make sure any remaining defQueue items get properly processed.
+            while (defQueue.length) {
+                args = defQueue.shift();
+                if (args[0] === null) {
+                    req.onError(new Error('Mismatched anonymous require.def modules'));
+                } else {
+                    callDefMain(args, context);
+                }
+            }
+
+            //Skip the resume if current context is in priority wait.
+            if (s.contexts[s.ctxName].config.priorityWait) {
+                return;
+            }
+
+            if (paused.length) {
+                for (i = 0; (args = paused[i]); i++) {
+                    req.checkDeps.apply(req, args);
+                }
+            }
+
+            req.checkLoaded(s.ctxName);
+        }
+    }
 
     /**
      * Main entry point.
@@ -89,12 +127,12 @@ var require;
      * of dependency string names to fetch. An optional function callback can
      * be specified to execute when all of those dependencies are available.
      */
-    require = function (deps, callback, contextName) {
-        var config;
+    require = function (deps, callback, contextName, relModuleName) {
+        var context, config;
         if (typeof deps === "string" && !isFunction(callback)) {
             //Just return the module wanted. In this scenario, the
             //second arg (if passed) is just the contextName.
-            return require.get(deps, callback);
+            return require.get(deps, callback, contextName, relModuleName);
         }
         // Dependencies first
         if (!require.isArray(deps)) {
@@ -109,7 +147,17 @@ var require;
                 deps = [];
             }
         }
-        return main(null, deps, callback, config, contextName);
+        main(null, deps, callback, config, contextName);
+
+        //If the require call does not trigger anything new to load,
+        //then resume the dependency processing. Context will be undefined
+        //on first run of require.
+        context = s.contexts[(contextName || (config && config.context) || s.ctxName)];
+        if (context && context.scriptCount === 0) {
+            resume(context);
+        }
+        //Returning undefined for Spidermonky strict checking in Komodo
+        return undefined;
     };
 
     //Alias for caja compliance internally -
@@ -121,7 +169,9 @@ var require;
     /**
      * Any errors that require explicitly generates will be passed to this
      * function. Intercept/override it if you want custom error handling.
-     * By default it just throws the error.
+     * If you do override it, this method should *always* throw an error
+     * to stop the execution flow correctly. Otherwise, other weird errors
+     * will occur.
      * @param {Error} err the error object.
      */
     req.onError = function (err) {
@@ -136,20 +186,15 @@ var require;
      * name.
      */
     req.def = function (name, deps, callback, contextName) {
-        var context = s.contexts[(contextName || s.ctxName)];
+        var i, scripts, script, node = currentlyAddingScript;
 
         //Allow for anonymous functions
         if (typeof name !== 'string') {
-            if (context.config.anon) {
-                defQueue.push(aps.call(arguments, 0));
-            } else {
-                return req.onError(new Error("require.def calls without a name " +
-                                             "are not allowed unless you set " +
-                                             "the config option \"anon\" to " +
-                                             "true. However, if anon is set " +
-                                             "to true, then only scripts that " +
-                                             "use require.def can be loaded."));
-            }
+            //Adjust args appropriately
+            contextName = callback;
+            callback = deps;
+            deps = name;
+            name = null;
         }
 
         //This module may not have dependencies
@@ -159,13 +204,59 @@ var require;
             deps = [];
         }
 
-        return main(name, deps, callback, null, contextName);
+        //If no name, and callback is a function, then figure out if it a
+        //CommonJS thing with dependencies.
+        if (!name && !deps.length && req.isFunction(callback)) {
+            //Remove comments from the callback string,
+            //look for require calls, and pull them into the dependencies.
+            callback
+                .toString()
+                .replace(commentRegExp, "")
+                .replace(cjsRequireRegExp, function (match, dep) {
+                    deps.push(dep);
+                });
+
+            //May be a CommonJS thing even without require calls, but still
+            //could use exports, and such, so always add those as dependencies.
+            //This is a bit wasteful for RequireJS modules that do not need
+            //an exports or module object, but erring on side of safety.
+            //REQUIRES the function to expect the CommonJS variables in the
+            //order listed below.
+            if (deps.length) {
+                deps = ["require", "exports", "module"].concat(deps);
+            }
+        }
+
+        //If in IE 6-8 and hit an anonymous require.def call, do the interactive/
+        //currentlyAddingScript scripts stuff.
+        if (!name && useInteractive) {
+            scripts = document.getElementsByTagName('script');
+            for (i = scripts.length - 1; i > -1 && (script = scripts[i]); i--) {
+                if (script.readyState === 'interactive') {
+                    node = script;
+                    break;
+                }
+            }
+            if (!node) {
+                req.onError(new Error("ERROR: No matching script interactive for " + callback));
+            }
+
+            name = node.getAttribute("data-requiremodule");
+        }
+
+        //Always save off evaluating the def call until the script onload handler.
+        //This allows multiple modules to be in a file without prematurely
+        //tracing dependencies, and allows for anonymous module support,
+        //where the module name is not known until the script onload event
+        //occurs.
+        defQueue.push([name, deps, callback, null, contextName]);
     };
 
     main = function (name, deps, callback, config, contextName) {
         //Grab the context, or create a new one for the given context name.
-        var context, newContext, contextRequire, loaded, pluginPrefix,
-            canSetContext, prop, newLength, outDeps, mods, paths, index, i, deferMods;
+        var context, newContext, loaded, pluginPrefix,
+            canSetContext, prop, newLength, outDeps, mods, paths, index, i,
+            deferMods, deferModArgs, lastModArg, waitingName;
 
         contextName = contextName ? contextName : (config && config.context ? config.context : s.ctxName);
         context = s.contexts[contextName];
@@ -182,12 +273,12 @@ var require;
 
             //If module already defined for context, or already waiting to be
             //evaluated, leave.
-            if (context && (context.defined[name] || context.waiting[name])) {
-                return req;
+            waitingName = context.waiting[name];
+            if (context && (context.defined[name] || (waitingName && waitingName !== ap[name]))) {
+                return;
             }
         }
 
-        //>>excludeStart("requireExcludeContext", pragmas.requireExcludeContext);
         if (contextName !== s.ctxName) {
             //If nothing is waiting on being loaded in the current context,
             //then switch s.ctxName to current contextName.
@@ -207,7 +298,6 @@ var require;
                 s.ctxName = contextName;
             }
         }
-        //>>excludeEnd("requireExcludeContext");
 
         if (!context) {
             newContext = {
@@ -223,34 +313,12 @@ var require;
                     "exports": true,
                     "module": true
                 },
-                loaded: {
-                    "require": true
-                },
+                loaded: {},
+                scriptCount: 0,
                 urlFetched: {},
                 defined: {},
                 modifiers: {}
             };
-
-            //Define require for this context.
-            //>>includeStart("requireExcludeContext", pragmas.requireExcludeContext);
-            //A placeholder for build pragmas.
-            newContext.defined.require = req;
-            //>>includeEnd("requireExcludeContext");
-            //>>excludeStart("requireExcludeContext", pragmas.requireExcludeContext);
-            newContext.defined.require = contextRequire = makeContextFunc(null, contextName);
-            req.mixin(contextRequire, {
-                //>>excludeStart("requireExcludeModify", pragmas.requireExcludeModify);
-                modify: makeContextFunc("modify", contextName),
-                def: makeContextFunc("def", contextName),
-                //>>excludeEnd("requireExcludeModify");
-                get: makeContextFunc("get", contextName, true),
-                nameToUrl: makeContextFunc("nameToUrl", contextName, true),
-                ready: req.ready,
-                context: newContext,
-                config: newContext.config,
-                isBrowser: s.isBrowser
-            });
-            //>>excludeEnd("requireExcludeContext");
 
             //>>excludeStart("requireExcludePlugin", pragmas.requireExcludePlugin);
             if (s.plugins.newContext) {
@@ -317,7 +385,7 @@ var require;
             //If it is just a config block, nothing else,
             //then return.
             if (!deps) {
-                return req;
+                return;
             }
         }
 
@@ -355,9 +423,18 @@ var require;
                 req(mods, contextName);
                 deferMods = mods.__deferMods;
                 if (deferMods) {
-                    contextRequire = context.defined.require;
                     for (i = 0; i < deferMods.length; i++) {
-                        contextRequire.def.apply(contextRequire, deferMods[i]);
+                        deferModArgs = deferMods[i];
+
+                        //Add the context name to the def call.
+                        lastModArg = deferModArgs[deferModArgs.length - 1];
+                        if (lastModArg === undefined) {
+                            deferModArgs[deferModArgs.length - 1] = contextName;
+                        } else if (typeof lastModArg === "string") {
+                            deferMods.push(contextName);
+                        }
+
+                        require.def.apply(require, deferModArgs);
                     }
                 }
             }
@@ -380,14 +457,11 @@ var require;
         }
         //>>excludeEnd("requireExcludePlugin");
 
-        //See if all is loaded. If paused, then do not check the dependencies
-        //of the module yet.
-        if (s.paused || context.config.priorityWait) {
-            (s.paused || (s.paused = [])).push([pluginPrefix, name, deps, context]);
-        } else {
-            req.checkDeps(pluginPrefix, name, deps, context);
-            req.checkLoaded(contextName);
-        }
+        //Hold on to the module until a script load or other adapter has finished
+        //evaluating the whole file. This helps when a file has more than one
+        //module in it -- dependencies are not traced and fetched until the whole
+        //file is processed.
+        s.paused.push([pluginPrefix, name, deps, context]);
 
         //Set loaded here for modules that are also loaded
         //as part of a layer, where onScriptLoad is not fired
@@ -396,8 +470,7 @@ var require;
         if (name) {
             context.loaded[name] = true;
         }
-        return req;
-    }
+    };
 
     /**
      * Simple function to mix in properties from source into target,
@@ -418,6 +491,7 @@ var require;
     s = req.s = {
         ctxName: defContextName,
         contexts: {},
+        paused: [],
         //>>excludeStart("requireExcludePlugin", pragmas.requireExcludePlugin);
         plugins: {
             defined: {},
@@ -517,55 +591,46 @@ var require;
     //>>excludeEnd("requireExcludePlugin");
 
     /**
-     * Internal method used by environment adapters to complete an anonymous
-     * module load. Never call this method when just defining or loading modules.
+     * Internal method used by environment adapters to complete a load event.
+     * A load event could be a script load or just a load pass from a synchronous
+     * load call.
      * @param {String} moduleName the name of the module to potentially complete.
+     * @param {Object} context the context object
      */
-    req.completeAnon = function (moduleName) {
-        //At this point, if the module is defined, it means it was a
-        if (defQueue.length) {
-            var args = defQueue.shift();
-            if (!args) {
-                return req.onError(new Error('Mismatched anonymous require.def modules'));
+    req.completeLoad = function (moduleName, context) {
+        //If there is a waiting require.def call
+        var args;
+        while (defQueue.length) {
+            args = defQueue.shift();
+            if (args[0] === null) {
+                args[0] = moduleName;
+                break;
+            } else if (args[0] === moduleName) {
+                //Found matching require.def call for this script!
+                break;
+            } else {
+                //Some other named require.def call, most likely the result
+                //of a build layer that included many require.def calls.
+                callDefMain(args, context);
             }
-            args.unshift(moduleName);
-            req.def.apply(req, args);
         }
+        if (args) {
+            callDefMain(args, context);
+        }
+
+        //Mark the script as loaded. Note that this can be different from a
+        //moduleName that maps to a require.def call. This line is important
+        //for traditional browser scripts.
+        context.loaded[moduleName] = true;
+        
+        context.scriptCount -= 1;
+        resume(context);
     };
 
     /**
-     * Pauses the tracing of dependencies. Useful in a build scenario when
-     * multiple modules are bundled into one file, and they all need to be
-     * require before figuring out what is left still to load.
+     * Legacy function, remove at some point
      */
-    req.pause = function () {
-        if (!s.paused) {
-            s.paused = [];
-        }
-    };
-
-    /**
-     * Resumes the tracing of dependencies. Useful in a build scenario when
-     * multiple modules are bundled into one file. This method is related
-     * to require.pause() and should only be called if require.pause() was called first.
-     */
-    req.resume = function () {
-        var i, args, paused;
-
-        //Skip the resume if current context is in priority wait.
-        if (s.contexts[s.ctxName].config.priorityWait) {
-            return;
-        }
-
-        if (s.paused) {
-            paused = s.paused;
-            delete s.paused;
-            for (i = 0; (args = paused[i]); i++) {
-                req.checkDeps.apply(req, args);
-            }
-        }
-        req.checkLoaded(s.ctxName);
-    };
+    req.pause = req.resume = function () {};
 
     /**
      * Trace down the dependencies to see if they are loaded. If not, trigger
@@ -703,21 +768,29 @@ var require;
      *
      * @param {String} moduleName the name of the module.
      * @param {String} [contextName] the name of the context to use. Uses
-     * default context if no contextName is provided.
+     * default context if no contextName is provided. You should never
+     * pass the contextName explicitly -- it is handled by the require() code.
+     * @param {String} [relModuleName] a module name to use for relative
+     * module name lookups. You should never pass this argument explicitly --
+     * it is handled by the require() code.
      *
      * @returns {Object} the exported module value.
      */
-    req.get = function (moduleName, contextName) {
-        if (moduleName === "exports" || moduleName === "module") {
-            return req.onError(new Error("require of " + moduleName + " is not allowed."));
+    req.get = function (moduleName, contextName, relModuleName) {
+        if (moduleName === "require" || moduleName === "exports" || moduleName === "module") {
+            req.onError(new Error("Explicit require of " + moduleName + " is not allowed."));
         }
         contextName = contextName || s.ctxName;
+
+        //Normalize module name, if it contains . or ..
+        moduleName = req.normalizeName(moduleName, relModuleName);
+
         var ret = s.contexts[contextName].defined[moduleName];
         if (ret === undefined) {
-            return req.onError(new Error("require: module name '" +
-                            moduleName +
-                            "' has not been loaded yet for context: " +
-                            contextName));
+            req.onError(new Error("require: module name '" +
+                        moduleName +
+                        "' has not been loaded yet for context: " +
+                        contextName));
         }
         return ret;
     };
@@ -742,22 +815,19 @@ var require;
             loaded[moduleName] = false;
         }
 
-        //>>excludeStart("requireExcludeContext", pragmas.requireExcludeContext);
         if (contextName !== s.ctxName) {
             //Not in the right context now, hold on to it until
             //the current context finishes all its loading.
             contextLoads.push(arguments);
         } else {
-        //>>excludeEnd("requireExcludeContext");
             //First derive the path name for the module.
             url = req.nameToUrl(moduleName, null, contextName);
             if (!urlFetched[url]) {
+                context.scriptCount += 1;
                 req.attach(url, contextName, moduleName);
                 urlFetched[url] = true;
             }
-        //>>excludeStart("requireExcludeContext", pragmas.requireExcludeContext);
         }
-        //>>excludeEnd("requireExcludeContext");
     };
 
     req.jsExtRegExp = /\.js$/;
@@ -775,6 +845,11 @@ var require;
         //Adjust any relative paths.
         var part;
         if (name.charAt(0) === ".") {
+            if (!baseName) {
+                req.onError(new Error("Cannot normalize module name: " +
+                            name +
+                            ", no relative module name available."));
+            }
             //Convert baseName to array, and lop off the last part,
             //so that . matches that "directory" and not name of the baseName's
             //module. For instance, baseName of "one/two/three", maps to
@@ -819,9 +894,7 @@ var require;
         }
 
         //Account for relative paths if there is a base name.
-        if (baseName) {
-            name = req.normalizeName(name, baseName);
-        }
+        name = req.normalizeName(name, baseName);
 
         return {
             prefix: prefix,
@@ -833,9 +906,12 @@ var require;
     /**
      * Converts a module name to a file path.
      */
-    req.nameToUrl = function (moduleName, ext, contextName) {
+    req.nameToUrl = function (moduleName, ext, contextName, relModuleName) {
         var paths, syms, i, parentModule, url,
             config = s.contexts[contextName].config;
+
+        //Normalize module name if have a base relative module name to work from.
+        moduleName = req.normalizeName(moduleName, relModuleName);
 
         //If a colon is in the URL, it indicates a protocol is used and it is just
         //an URL to a file, or if it starts with a slash or ends with .js, it is just a plain file.
@@ -912,7 +988,7 @@ var require;
                 //Clean up priority and call resume, since it could have
                 //some waiting dependencies to trace.
                 delete context.config.priorityWait;
-                req.resume();
+                resume(context);
             } else {
                 return;
             }
@@ -925,7 +1001,7 @@ var require;
         context.isCheckLoaded = true;
 
         //Grab waiting and loaded lists here, since it could have changed since
-        //this function was first called, for instance, by the require.resume()
+        //this function was first called.
         waiting = context.waiting;
         loaded = context.loaded;
 
@@ -960,7 +1036,7 @@ var require;
             err = new Error("require.js load timeout for modules: " + noLoads);
             err.requireType = "timeout";
             err.requireModules = noLoads;
-            return req.onError(err);
+            req.onError(err);
         }
         if (stillLoading) {
             //Something is still waiting to load. Wait for it.
@@ -1017,7 +1093,6 @@ var require;
             //callbacks that triggered other require calls.
             req.checkLoaded(contextName);
         } else if (contextLoads.length) {
-            //>>excludeStart("requireExcludeContext", pragmas.requireExcludeContext);
             //Check for other contexts that need to load things.
             //First, make sure current context has no more things to
             //load. After defining the modules above, new require calls
@@ -1043,7 +1118,6 @@ var require;
                     req.load.apply(req, loadArgs);
                 }
             }
-            //>>excludeEnd("requireExcludeContext");
         } else {
             //Make sure we reset to default context.
             s.ctxName = defContextName;
@@ -1065,6 +1139,42 @@ var require;
         };
     }
 
+    function makeContextModuleFunc(name, contextName, moduleName) {
+        return function () {
+            //A version of a require function that forces a contextName value
+            //and also passes a moduleName value for items that may need to
+            //look up paths relative to the moduleName
+            var args = [].concat(aps.call(arguments, 0));
+            args.push(contextName, moduleName);
+            return (name ? require[name] : require).apply(null, args);
+        };
+    }
+
+    /**
+     * Helper function that creates a require function object to give to
+     * modules that ask for it as a dependency. It needs to be specific
+     * per module because of the implication of path mappings that may
+     * need to be relative to the module name.
+     */
+    function makeRequire(context, moduleName) {
+        var contextName = context.contextName,
+            modRequire = makeContextModuleFunc(null, contextName, moduleName);
+
+        req.mixin(modRequire, {
+            //>>excludeStart("requireExcludeModify", pragmas.requireExcludeModify);
+            modify: makeContextModuleFunc("modify", contextName, moduleName),
+            //>>excludeEnd("requireExcludeModify");
+            def: makeContextModuleFunc("def", contextName, moduleName),
+            get: makeContextModuleFunc("get", contextName, moduleName),
+            nameToUrl: makeContextModuleFunc("nameToUrl", contextName, moduleName),
+            ready: req.ready,
+            context: context,
+            config: context.config,
+            isBrowser: s.isBrowser
+        });
+        return modRequire;
+    }
+
     /**
      * Executes the modules in the correct order.
      * 
@@ -1074,7 +1184,8 @@ var require;
         //Some modules are just plain script files, abddo not have a formal
         //module definition, 
         if (!module) {
-            return;
+            //Returning undefined for Spidermonky strict checking in Komodo
+            return undefined;
         }
 
         var name = module.name, cb = module.callback, deps = module.deps, j, dep,
@@ -1095,7 +1206,9 @@ var require;
         if (deps) {
             for (j = 0; (dep = deps[j]); j++) {
                 depName = dep.name;
-                if (depName === "exports") {
+                if (depName === "require") {
+                    depModule = makeRequire(context, name);
+                } else if (depName === "exports") {
                     //CommonJS module spec 1.1
                     depModule = defined[name] = {};
                     usingExports = true;
@@ -1133,7 +1246,7 @@ var require;
                         ret = defined[name] = depModule.exports;
                     } else {
                         if (name in defined) {
-                            return req.onError(new Error(name + " has already been defined"));
+                            req.onError(new Error(name + " has already been defined"));
                         }
                         defined[name] = ret;
                     }
@@ -1208,18 +1321,7 @@ var require;
             moduleName = node.getAttribute("data-requiremodule");
             context = s.contexts[contextName];
 
-            //If module not marked as loaded via main, then it is an anonymous
-            //module, set up the name now.
-            if (!context.loaded[moduleName]) {
-                req.completeAnon(moduleName);
-            }
-
-            //Mark the module loaded. Must do it here in addition
-            //to doing it in require.def in case a script does
-            //not call require.def
-            context.loaded[moduleName] = true;
-
-            req.checkLoaded(contextName);
+            req.completeLoad(moduleName, context);
 
             //Clean up script binding.
             if (node.removeEventListener) {
@@ -1242,7 +1344,7 @@ var require;
      * @param {String} [type] optional type, defaults to text/javascript
      */
     req.attach = function (url, contextName, moduleName, callback, type) {
-        var node, loaded;
+        var node, loaded, context;
         if (isBrowser) {
             //In the browser so use a script tag
             callback = callback || req.onScriptLoad;
@@ -1269,12 +1371,28 @@ var require;
             if (node.addEventListener) {
                 node.addEventListener("load", callback, false);
             } else {
-                //Probably IE.
+                //Probably IE. IE (at least 6-8) do not fire
+                //script onload right after executing the script, so
+                //we cannot tie the anonymous require.def call to a name.
+                //However, IE reports the script as being in "interactive"
+                //readyState at the time of the require.def call.
+                useInteractive = true;
                 node.attachEvent("onreadystatechange", callback);
             }
             node.src = url;
 
-            return baseElement ? s.head.insertBefore(node, baseElement) : s.head.appendChild(node);
+            //For some cache cases in IE 6-8, the script executes before the end
+            //of the appendChild execution, so to tie an anonymous require.def
+            //call to the module name (which is stored on the node), hold on
+            //to a reference to this node, but clear after the DOM insertion.
+            currentlyAddingScript = node;
+            if (baseElement) {
+                s.head.insertBefore(node, baseElement);
+            } else {
+                s.head.appendChild(node);
+            }
+            currentlyAddingScript = null;
+            return node;
         } else if (isWebWorker) {
             //In a web worker, use importScripts. This is not a very
             //efficient use of importScripts, importScripts will block until
@@ -1282,12 +1400,13 @@ var require;
             //are in play, the expectation that a build has been done so that
             //only one script needs to be loaded anyway. This may need to be
             //reevaluated if other use cases become common.
-            loaded = s.contexts[contextName].loaded;
+            context = s.contexts[contextName];
+            loaded = context.loaded;
             loaded[moduleName] = false;
             importScripts(url);
-            //Just mark the script loaded, someone else will check dependencies
-            //when all done.
-            loaded[moduleName] = true;
+
+            //Account for anonymous modules
+            req.completeLoad(moduleName, context);
         }
         return null;
     };
@@ -1450,4 +1569,14 @@ var require;
 
     //Set up default context. If require was a configuration object, use that as base config.
     req(cfg);
+
+    //If modules are built into require.js, then need to make sure dependencies are
+    //traced. Use a setTimeout in the browser world, to allow all the modules to register
+    //themselves. In a non-browser env, assume that modules are not built into require.js,
+    //which seems odd to do on the server.
+    if (typeof setTimeout !== "undefined") {
+        setTimeout(function () {
+            resume(s.contexts[(cfg.context || defContextName)]);
+        }, 0);
+    }
 }());
