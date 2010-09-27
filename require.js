@@ -13,7 +13,7 @@ setInterval: false, importScripts: false */
 var require;
 (function () {
     //Change this version number for each release.
-    var version = "0.13.0+",
+    var version = "0.14.0",
             empty = {}, s,
             i, defContextName = "_", contextLoads = [],
             scripts, script, rePkg, src, m, dataMain, cfg = {}, setReadyState,
@@ -269,7 +269,13 @@ var require;
             if (index !== -1) {
                 pluginPrefix = name.substring(0, index);
                 name = name.substring(index + 1, name.length);
+            } else {
+                //Could be that the plugin name should be auto-applied.
+                //Used by i18n plugin to enable anonymous i18n modules, but
+                //still associating the auto-generated name with the i18n plugin.
+                pluginPrefix = context.defPlugin[name];
             }
+
             //>>excludeEnd("requireExcludePlugin");
 
             //If module already defined for context, or already waiting to be
@@ -318,6 +324,7 @@ var require;
                 loaded: {},
                 scriptCount: 0,
                 urlFetched: {},
+                defPlugin: {},
                 defined: {},
                 modifiers: {}
             };
@@ -1304,13 +1311,16 @@ var require;
         if (cb && req.isFunction(cb)) {
             ret = req.execCb(name, cb, args);
             if (name) {
-                if (usingExports && (!cjsModule || !("exports" in cjsModule))) {
+                //If using exports and the function did not return a value,
+                //and the "module" object for this definition function did not
+                //define an exported value, then use the exports object.
+                if (usingExports && ret === undefined && (!cjsModule || !("exports" in cjsModule))) {
                     ret = defined[name];
                 } else {
                     if (cjsModule && "exports" in cjsModule) {
                         ret = defined[name] = depModule.exports;
                     } else {
-                        if (name in defined) {
+                        if (name in defined && !usingExports) {
                             req.onError(new Error(name + " has already been defined"));
                         }
                         defined[name] = ret;
