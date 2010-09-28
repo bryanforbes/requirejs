@@ -13,7 +13,7 @@ setInterval: false, importScripts: false */
 var require;
 (function () {
     //Change this version number for each release.
-    var version = "0.14.0",
+    var version = "0.14.1",
             empty = {}, s,
             i, defContextName = "_", contextLoads = [],
             scripts, script, rePkg, src, m, dataMain, cfg = {}, setReadyState,
@@ -222,9 +222,7 @@ var require;
             //an exports or module object, but erring on side of safety.
             //REQUIRES the function to expect the CommonJS variables in the
             //order listed below.
-            if (deps.length) {
-                deps = ["require", "exports", "module"].concat(deps);
-            }
+            deps = ["require", "exports", "module"].concat(deps);
         }
 
         //If in IE 6-8 and hit an anonymous require.def call, do the interactive/
@@ -1037,8 +1035,7 @@ var require;
                 pIsWaiting = s.plugins.isWaiting, pOrderDeps = s.plugins.orderDeps,
                 //>>excludeEnd("requireExcludePlugin");
 
-                i, module, allDone, loads, loadArgs, err,
-                traced = {};
+                i, module, allDone, loads, loadArgs, err;
 
         //If already doing a checkLoaded call,
         //then do not bother checking loaded state.
@@ -1141,7 +1138,7 @@ var require;
         for (prop in modifiers) {
             if (!(prop in empty)) {
                 if (defined[prop]) {
-                    req.execModifiers(prop, traced, waiting, context);
+                    req.execModifiers(prop, {}, waiting, context);
                 }
             }
         }
@@ -1149,7 +1146,7 @@ var require;
 
         //Define the modules, doing a depth first search.
         for (i = 0; (module = waiting[i]); i++) {
-            req.exec(module, traced, waiting, context);
+            req.exec(module, {}, waiting, context);
         }
 
         //Indicate checkLoaded is now done.
@@ -1269,7 +1266,7 @@ var require;
             if (traced[name] || name in defined) {
                 return defined[name];
             }
-    
+
             //Mark this module as being traced, so that it is not retraced (as in a circular
             //dependency)
             traced[name] = true;
