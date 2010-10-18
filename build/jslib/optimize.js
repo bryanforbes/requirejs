@@ -1,6 +1,6 @@
 /**
- * @license Copyright (c) 2004-2010, The Dojo Foundation All Rights Reserved.
- * Available via the MIT, GPL or new BSD license.
+ * @license Copyright (c) 2010, The Dojo Foundation All Rights Reserved.
+ * Available via the MIT or new BSD license.
  * see: http://github.com/jrburke/requirejs for details
  */
 
@@ -15,7 +15,7 @@ var optimize;
 (function () {
     var JSSourceFilefromCode,
         textDepRegExp = /["'](text)\!([^"']+)["']/g,
-        relativeDefRegExp = /require\s*\.\s*def\s*\(\s*['"]([^'"]+)['"]/g,
+        relativeDefRegExp = /(require\s*\.\s*def|define)\s*\(\s*['"]([^'"]+)['"]/g,
         cssImportRegExp = /\@import\s+(url\()?\s*([^);]+)\s*(\))?([\w, ]*)(;)?/g,
         cssUrlRegExp = /\url\(\s*([^\)]+)\s*\)?/g;
 
@@ -224,7 +224,7 @@ var optimize;
                     }
 
                     //Take the last match, the one closest to current text! string.
-                    defName = defMatch[1];
+                    defName = defMatch[2];
 
                     normalizedName = require.normalizeName(modName, defName, require.s.contexts._);
                 }

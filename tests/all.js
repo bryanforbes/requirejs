@@ -1,4 +1,5 @@
 doh.registerUrl("simple", "../simple.html");
+doh.registerUrl("baseUrl", "../baseUrl.html");
 doh.registerUrl("config", "../config.html");
 doh.registerUrl("dataMain", "../dataMain.html");
 doh.registerUrl("anonSimple", "../anon/anonSimple.html");
@@ -15,6 +16,8 @@ doh.registerUrl("depoverlap", "../depoverlap.html");
 doh.registerUrl("urlfetch", "../urlfetch/urlfetch.html");
 doh.registerUrl("multiversion", "../multiversion.html", 10000);
 doh.registerUrl("jquery", "../jquery/jquery.html");
+doh.registerUrl("jqueryDynamic", "../jquery/jqueryDynamic.html");
+doh.registerUrl("jqueryDynamic2", "../jquery/jqueryDynamic2.html");
 doh.registerUrl("i18nlocaleunknown", "../i18n/i18n.html?bundle=i18n!nls/fr-fr/colors");
 doh.registerUrl("i18n", "../i18n/i18n.html");
 doh.registerUrl("i18nlocale", "../i18n/i18n.html?locale=en-us-surfer");
@@ -30,6 +33,7 @@ doh.registerUrl("relative", "../relative/relative.html");
 doh.registerUrl("exports", "../exports/exports.html");
 doh.registerUrl("transportD", "../transportD/transportD.html");
 doh.registerUrl("priority", "../priority/priority.html");
+doh.registerUrl("priorityWithDeps", "../priority/priorityWithDeps/priorityWithDeps.html");
 doh.registerUrl("prioritySingleCall", "../priority/prioritySingleCall.html");
 
 if (typeof Worker !== "undefined") {

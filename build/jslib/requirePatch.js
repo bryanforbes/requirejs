@@ -1,6 +1,6 @@
 /**
- * @license RequireJS Copyright (c) 2004-2010, The Dojo Foundation All Rights Reserved.
- * Available via the MIT, GPL or new BSD license.
+ * @license RequireJS Copyright (c) 2010, The Dojo Foundation All Rights Reserved.
+ * Available via the MIT or new BSD license.
  * see: http://github.com/jrburke/requirejs for details
  */
 /*
@@ -89,7 +89,7 @@
 
     //This function signature does not have to be exact, just match what we
     //are looking for.
-    require.def = function (name, obj) {
+    define = require.def = function (name, obj) {
         if (typeof name === "string" && !require.isArray(obj) && !require.isFunction(obj)) {
             layer.modulesWithNames[name] = true;
         }

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#@license RequireJS Copyright (c) 2004-2010, The Dojo Foundation All Rights Reserved.
-#Available via the MIT, GPL or new BSD license.
+#@license RequireJS Copyright (c) 2010, The Dojo Foundation All Rights Reserved.
+#Available via the MIT or new BSD license.
 #see: http://github.com/jrburke/requirejs for details
 
 #version should be something like 0.9.0beta or 0.9.0
@@ -11,7 +11,7 @@ if [ -z $version ]; then
     exit 1
 fi
 
-jqueryName=jquery-1.4.2.js
+jqueryName=jquery-1.4.3.js
 
 # Setup a build directory
 rm -rf ../../requirejs-build
@@ -34,7 +34,6 @@ cd requirejs-$version/build/require
 cd build
 cp require.js ../../../../$version/comments/require.js
 cp allplugins-require.js ../../../../$version/comments/allplugins-require.js
-cp transportD-require.js ../../../../$version/comments/transportD-require.js
 
 # Build jquery options
 cd ../../jquery
@@ -63,7 +62,6 @@ cd ../../../
 cd ../$version/comments
 java -jar ../../requirejs-$version/build/lib/closure/compiler.jar --js require.js --js_output_file ../minified/require.js
 java -jar ../../requirejs-$version/build/lib/closure/compiler.jar --js allplugins-require.js --js_output_file ../minified/allplugins-require.js
-java -jar ../../requirejs-$version/build/lib/closure/compiler.jar --js transportD-require.js --js_output_file ../minified/transportD-require.js
 java -jar ../../requirejs-$version/build/lib/closure/compiler.jar --js require-$jqueryName --js_output_file ../minified/require-$jqueryName
 java -jar ../../requirejs-$version/build/lib/closure/compiler.jar --js requireplugins-$jqueryName --js_output_file ../minified/requireplugins-$jqueryName
 
