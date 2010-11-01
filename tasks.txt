@@ -1,4 +1,32 @@
+Optimizer improvements:
+1) Make sure the optimizer can be run from any directory, and not force you to be in the same directory as the app.build.js file
+2) Investigate the issue with main.js baseUrl overriding the one in app.build.js
+3) Update examples/docs to allow an app.build.js that can be passed through the minifier.
+4) See if the pathing can be made simpler (abde's comment).
+
+
+Node issues:
+* socket.io/support/socket.io-client/lib/io.js. uses "this" to attach properties to export?!?
+* connect/lib/connect/index.js and express/support/connect/lib/connect/index.js do a try/catch for "constants"
+xx* connect-redis/lib/redis/index.js, it tried to require('util') or 'sys' try/catch dependening on node version.
+* connect/lib/connect/index.js does dynamic/computed require calls
+
+- Allow factory function storage per-url, to reuse across contexts. Hmm, what
+  to do with modules in an optimized layer.
+- Figure out if isCheckLoaded can be avoided. Not likely, but revisit.
+
+- Finish PS3 work, investigate test failures, document level of support.
+
+- get rid of pragma for page load logic exclusion?
+
 - Calculate baseUrl relative to data-main if it is available.
+
+- Check out blackberry emulators at:
+https://www.blackberry.com/Downloads/entry.do?code=060AD92489947D410D897474079C1477
+
+- Building a lib that has its own lookup paths, so it can be self-contained?
+  but what if want to share code? Maybe just make it an option, you can do it,
+  but lose out on shared common.
 
 - refactor considerations:
   - Only execute module functions that have a specific dependency set for them?

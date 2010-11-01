@@ -1,5 +1,5 @@
 /** vim: et:ts=4:sw=4:sts=4
- * @license RequireJS Copyright (c) 2010, The Dojo Foundation All Rights Reserved.
+ * @license RequireJS 0.14.5 Copyright (c) 2010, The Dojo Foundation All Rights Reserved.
  * Available via the MIT or new BSD license.
  * see: http://github.com/jrburke/requirejs for details
  */
@@ -17,12 +17,16 @@ var require, define;
             empty = {}, s,
             i, defContextName = "_", contextLoads = [],
             scripts, script, rePkg, src, m, dataMain, cfg = {}, setReadyState,
-            readyRegExp = /^(complete|loaded)$/,
             commentRegExp = /(\/\*([\s\S]*?)\*\/|\/\/(.*)$)/mg,
-            cjsRequireRegExp = /require\(["']([\w-_\.\/]+)["']\)/g,
+            cjsRequireRegExp = /require\(["']([\w\-_\.\/]+)["']\)/g,
             main,
             isBrowser = !!(typeof window !== "undefined" && navigator && document),
             isWebWorker = !isBrowser && typeof importScripts !== "undefined",
+            //PS3 indicates loaded and complete, but need to wait for complete
+            //specifically. Sequence is "loading", "loaded", execution,
+            // then "complete". The UA check is unfortunate, but not sure how
+            //to feature test w/o causing perf issues.
+            readyRegExp = isBrowser && navigator.platform === 'PLAYSTATION 3' ? /^complete$/ : /^(complete|loaded)$/,
             ostring = Object.prototype.toString,
             ap = Array.prototype,
             aps = ap.slice, scrollIntervalId, req, baseElement,
@@ -977,37 +981,44 @@ var require, define;
         //Adjust any relative paths.
         var part;
         if (name.charAt(0) === ".") {
-            if (!baseName) {
-                req.onError(new Error("Cannot normalize module name: " +
-                            name +
-                            ", no relative module name available."));
-            }
-
-            if (context.config.packages[baseName]) {
-                //If the baseName is a package name, then just treat it as one
-                //name to concat the name with.
-                baseName = [baseName];
-            } else {
-                //Convert baseName to array, and lop off the last part,
-                //so that . matches that "directory" and not name of the baseName's
-                //module. For instance, baseName of "one/two/three", maps to
-                //"one/two/three.js", but we want the directory, "one/two" for
-                //this normalization.
-                baseName = baseName.split("/");
-                baseName = baseName.slice(0, baseName.length - 1);
-            }
-
-            name = baseName.concat(name.split("/"));
-            for (i = 0; (part = name[i]); i++) {
-                if (part === ".") {
-                    name.splice(i, 1);
-                    i -= 1;
-                } else if (part === "..") {
-                    name.splice(i - 1, 2);
-                    i -= 2;
+            //If have a base name, try to normalize against it,
+            //otherwise, assume it is a top-level require that will
+            //be relative to baseUrl in the end.
+            if (baseName) {
+                if (context.config.packages[baseName]) {
+                    //If the baseName is a package name, then just treat it as one
+                    //name to concat the name with.
+                    baseName = [baseName];
+                } else {
+                    //Convert baseName to array, and lop off the last part,
+                    //so that . matches that "directory" and not name of the baseName's
+                    //module. For instance, baseName of "one/two/three", maps to
+                    //"one/two/three.js", but we want the directory, "one/two" for
+                    //this normalization.
+                    baseName = baseName.split("/");
+                    baseName = baseName.slice(0, baseName.length - 1);
                 }
+
+                name = baseName.concat(name.split("/"));
+                for (i = 0; (part = name[i]); i++) {
+                    if (part === ".") {
+                        name.splice(i, 1);
+                        i -= 1;
+                    } else if (part === "..") {
+                        if (i === 1) {
+                            //End of the line. Keep at least one non-dot
+                            //path segment at the front so it can be mapped
+                            //correctly to disk. Otherwise, there is likely
+                            //no path mapping for '..'.
+                            break;
+                        } else if (i > 1) {
+                            name.splice(i - 1, 2);
+                            i -= 2;
+                        }
+                    }
+                }
+                name = name.join("/");
             }
-            name = name.join("/");
         }
         return name;
     };
@@ -1100,6 +1111,11 @@ var require, define;
                                  config.urlArgs) : url;
     };
 
+    //In async environments, checkLoaded can get called a few times in the same
+    //call stack. Allow only one to do the finishing work. Set to false
+    //for sync environments.
+    req.blockCheckLoaded = true;
+
     /**
      * Checks if all modules for a context are loaded, and if so, evaluates the
      * new ones in right dependency order.
@@ -1143,7 +1159,7 @@ var require, define;
         //by calling a waiting callback that then calls require and then this function
         //should not proceed. At the end of this function, if there are still things
         //waiting, then checkLoaded will be called again.
-        context.isCheckLoaded = true;
+        context.isCheckLoaded = req.blockCheckLoaded;
 
         //Grab waiting and loaded lists here, since it could have changed since
         //this function was first called.
