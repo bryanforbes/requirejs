@@ -18,7 +18,7 @@ var require, define;
             i, defContextName = "_", contextLoads = [],
             scripts, script, rePkg, src, m, dataMain, cfg = {}, setReadyState,
             commentRegExp = /(\/\*([\s\S]*?)\*\/|\/\/(.*)$)/mg,
-            cjsRequireRegExp = /require\(["']([\w\-_\.\/]+)["']\)/g,
+            cjsRequireRegExp = /require\(["']([\w\!\-_\.\/]+)["']\)/g,
             main,
             isBrowser = !!(typeof window !== "undefined" && navigator && document),
             isWebWorker = !isBrowser && typeof importScripts !== "undefined",
@@ -908,12 +908,12 @@ var require, define;
         }
         contextName = contextName || s.ctxName;
 
-        var ret, context = s.contexts[contextName];
+        var ret, context = s.contexts[contextName], nameProps;
 
         //Normalize module name, if it contains . or ..
-        moduleName = req.normalizeName(moduleName, relModuleName, context);
+        nameProps = req.splitPrefix(moduleName, relModuleName, context);
 
-        ret = context.defined[moduleName];
+        ret = context.defined[nameProps.name];
         if (ret === undefined) {
             req.onError(new Error("require: module name '" +
                         moduleName +
@@ -966,7 +966,7 @@ var require, define;
         }
     };
 
-    req.jsExtRegExp = /\.js$/;
+    req.jsExtRegExp = /^\/|:|\?|\.js$/;
 
     /**
      * Given a relative module name, like ./something, normalize it to
@@ -1068,7 +1068,7 @@ var require, define;
         //If a colon is in the URL, it indicates a protocol is used and it is just
         //an URL to a file, or if it starts with a slash or ends with .js, it is just a plain file.
         //The slash is important for protocol-less URLs as well as full paths.
-        if (moduleName.indexOf(":") !== -1 || moduleName.charAt(0) === '/' || req.jsExtRegExp.test(moduleName)) {
+        if (req.jsExtRegExp.test(moduleName)) {
             //Just a plain path, not module name lookup, so just return it.
             //Add extension if it is included. This is a bit wonky, only non-.js things pass
             //an extension, this method probably needs to be reworked.
