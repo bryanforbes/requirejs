@@ -1,5 +1,5 @@
 /** vim: et:ts=4:sw=4:sts=4
- * @license RequireJS 0.14.5 Copyright (c) 2010, The Dojo Foundation All Rights Reserved.
+ * @license RequireJS 0.15.0+ Copyright (c) 2010, The Dojo Foundation All Rights Reserved.
  * Available via the MIT or new BSD license.
  * see: http://github.com/jrburke/requirejs for details
  */
@@ -13,7 +13,7 @@ setInterval: false, importScripts: false, jQuery: false */
 var require, define;
 (function () {
     //Change this version number for each release.
-    var version = "0.14.5+",
+    var version = "0.15.0+",
             empty = {}, s,
             i, defContextName = "_", contextLoads = [],
             scripts, script, rePkg, src, m, dataMain, cfg = {}, setReadyState,
@@ -160,12 +160,26 @@ var require, define;
             }
 
             if (paused.length) {
+                //Reset paused since this loop will process current set.
+                s.paused = [];
+
                 for (i = 0; (args = paused[i]); i++) {
                     req.checkDeps.apply(req, args);
                 }
             }
 
-            req.checkLoaded(s.ctxName);
+            if (isWebWorker) {
+                //In a web worker, since importScripts is synchronous,
+                //it may think all dependencies are loaded, but still
+                //in the middle of a list of dependency fetches, so
+                //delay the checkLoaded in a timeout for the items to complete.
+                //This is really hacky though, time for a rewrite.
+                setTimeout(function () {
+                    req.checkLoaded(s.ctxName);
+                }, 30);
+            } else {
+                req.checkLoaded(s.ctxName);
+            }
         }
     }
 
@@ -1055,6 +1069,30 @@ var require, define;
     };
 
     /**
+     * Start of a public API replacement for nameToUrl. For now, just leverage
+     * nameToUrl, but know that nameToUrl will go away in the future.
+     * moduleNamePlusExt is of format "some/module/thing.html". It only works
+     * for module-like names and will not work with any dependency name in the
+     * future (for instance, passing "http://a.com/some/thing.html" will not
+     * make any sense)
+     */
+    //TODO: what does requ.toUrl("packageName") resolve to? base package
+    //dir or lib? Probably base package dir.
+    /*
+    req.toUrl = function (moduleNamePlusExt, contextName, relModuleName) {
+        var index = moduleNamePlusExt.lastIndexOf('.'),
+            ext = null;
+
+        if (index !== -1) {
+            ext = moduleNamePlusExt.substring(index, moduleNamePlusExt.length);
+            moduleNamePlusExt = moduleNamePlusExt.substring(0, index);
+        }
+
+        return req.nameToUrl(moduleNamePlusExt, ext, contextName, relModuleName);
+    };
+    */
+
+    /**
      * Converts a module name to a file path.
      */
     req.nameToUrl = function (moduleName, ext, contextName, relModuleName) {
@@ -1328,6 +1366,7 @@ var require, define;
             def: makeContextModuleFunc("def", contextName, moduleName),
             get: makeContextModuleFunc("get", contextName, moduleName),
             nameToUrl: makeContextModuleFunc("nameToUrl", contextName, moduleName),
+            toUrl: makeContextModuleFunc("toUrl", contextName, moduleName),
             ready: req.ready,
             context: context,
             config: context.config,
@@ -1526,9 +1565,8 @@ var require, define;
             //Helps Firefox 3.6+
             //Allow some URLs to not be fetched async. Mostly helps the order!
             //plugin
-            if (!s.skipAsync[url]) {
-                node.async = true;
-            }
+            node.async = !s.skipAsync[url];
+
             node.setAttribute("data-requirecontext", contextName);
             node.setAttribute("data-requiremodule", moduleName);
 
@@ -1569,6 +1607,7 @@ var require, define;
             context = s.contexts[contextName];
             loaded = context.loaded;
             loaded[moduleName] = false;
+
             importScripts(url);
 
             //Account for anonymous modules
@@ -1611,10 +1650,16 @@ var require, define;
 
             //Look for a data-main attribute to set main script for the page
             //to load.
-            if (!cfg.deps) {
-                dataMain = script.getAttribute('data-main');
-                if (dataMain) {
-                    cfg.deps = [dataMain];
+            if (!dataMain && (dataMain = script.getAttribute('data-main'))) {
+                cfg.deps = cfg.deps ? cfg.deps.concat(dataMain) : [dataMain];
+
+                //Favor using data-main tag as the base URL instead of
+                //trying to pattern-match src values.
+                if (!cfg.baseUrl && (src = script.src)) {
+                    src = src.split('/');
+                    src.pop();
+                    //Make sure current config gets the value.
+                    s.baseUrl = cfg.baseUrl = src.length ? src.join('/') : './';
                 }
             }
 
@@ -1622,8 +1667,7 @@ var require, define;
             //While using a relative URL will be fine for script tags, other
             //URLs used for text! resources that use XHR calls might benefit
             //from an absolute URL.
-            src = script.src;
-            if (src && !s.baseUrl) {
+            if (!s.baseUrl && (src = script.src)) {
                 m = src.match(rePkg);
                 if (m) {
                     s.baseUrl = src.substring(0, m.index);
