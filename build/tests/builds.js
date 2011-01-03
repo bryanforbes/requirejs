@@ -47,7 +47,7 @@ fileUtil.deleteFile("builds");
 
                 //Reset require internal state for the contexts so future
                 //builds in these tests will work correctly.
-                require.s.contexts = {};
+                delete require.s.contexts._;
             },
 
             function oneJsFile(t) {
@@ -58,7 +58,7 @@ fileUtil.deleteFile("builds");
 
                 //Reset require internal state for the contexts so future
                 //builds in these tests will work correctly.
-                require.s.contexts = {};
+                delete require.s.contexts._;
             },
 
             function simple(t) {
@@ -69,7 +69,7 @@ fileUtil.deleteFile("builds");
 
                 //Reset require internal state for the contexts so future
                 //builds in these tests will work correctly.
-                require.s.contexts = {};
+                delete require.s.contexts._;
             },
 
             function excludeShallow(t) {
@@ -77,6 +77,7 @@ fileUtil.deleteFile("builds");
                        "baseUrl=../../tests", "optimize=none"]);
                 t.is(nol(c("../../tests/tres.js") +
                      c("../../tests/uno.js")), nol(c("builds/unoExcludeShallow.js")));
+                delete require.s.contexts._;
             },
 
             function exclude(t) {
@@ -84,15 +85,17 @@ fileUtil.deleteFile("builds");
                        "baseUrl=../../tests", "optimize=none"]);
 
                 t.is(nol(c("../../tests/uno.js")), nol(c("builds/unoExclude.js")));
+                delete require.s.contexts._;
             },
 
             function textPluginIncluded(t) {
                 build(["..", "name=one", "include=require/text", "out=builds/oneText.js",
                        "baseUrl=../../tests", "optimize=none"]);
 
-                t.is(nol(cPragma("../../require/text.js") +
-                         c("../../tests/two.js") +
-                         c("../../tests/one.js")), nol(c("builds/oneText.js")));
+                t.is(nol(nol(c("../../tests/two.js") +
+                         c("../../tests/one.js")) +
+                         cPragma("../../require/text.js")), nol(c("builds/oneText.js")));
+                delete require.s.contexts._;
             }
 
         ]

@@ -15,7 +15,7 @@
 (function () {
     var layer,
         lineSeparator = java.lang.System.getProperty("line.separator"),
-        orderRegExp = /order!/g,
+        pluginBuilderRegExp = /(["']?)pluginBuilder(["']?)\s*[=\:]\s*["']([\w\d-\.]+)["']/g,
         oldDef;
 
     //A file read function that can deal with BOMs
@@ -54,7 +54,7 @@
     /** Reset state for each build layer pass. */
     require._buildReset = function () {
         //Clear up the existing context.
-        delete require.s.contexts[require.s.ctxName];
+        delete require.s.contexts._;
 
         //These variables are not contextName-aware since the build should
         //only have one context.
@@ -100,13 +100,30 @@
         return oldDef.apply(require, arguments);
     };
 
+    //Indicate this is a build run.
+    require.isBuild = true;
+
+    //Add some utilities for plugins/pluginBuilders
+    require._readFile = _readFile;
+    require._fileExists = function (path) {
+        return (new java.io.File(path)).exists();
+    };
+
+    require.pluginBuilders = {};
+
     //Override load so that the file paths can be collected.
-    require.load = function (moduleName, contextName) {
+    require.load = function (context, moduleName, url) {
         /*jslint evil: true */
-        var url = require.nameToUrl(moduleName, null, contextName),
-            contents,
-            context = require.s.contexts[contextName];
+        var evalSource = false,
+            contents, pluginContents, pluginBuilderMatch, builderName;
+
+        //Adjust the URL if it was not transformed to use baseUrl.
+        if (require.jsExtRegExp.test(moduleName)) {
+            url = context.config.dirBaseUrl + url;
+        }
+
         context.loaded[moduleName] = false;
+        context.scriptCount += 1;
 
         //Only handle urls that can be inlined, so that means avoiding some
         //URLs like ones that require network access or may be too dynamic,
@@ -130,42 +147,62 @@
                 layer.existingRequireUrl = url;
             }
 
-            //Only eval complete contents if asked, or if it is a require extension.
-            //Otherwise, treat the module as not safe for execution and parse out
-            //the require calls.
-            if (!context.config.execModules && moduleName !== "require/text" && moduleName !== "require/i18n") {
-                //Only find the require parts with [] dependencies and
-                //evaluate those. This path is useful when the code
-                //does not follow the strict require pattern of wrapping all
-                //code in a require callback.
+            if (moduleName in context.plugins) {
+                //This is a loader plugin, check to see if it has a build extension.
+                pluginBuilderMatch = pluginBuilderRegExp.exec(contents);
+                if (pluginBuilderMatch) {
+                    //Load the plugin builder for the plugin contents.
+                    builderName = context.normalizeName(pluginBuilderMatch[3], moduleName);
+                    pluginContents = _readFile(context.nameToUrl(builderName));
+
+                    //Add the name of the module if it is not already there.
+                    pluginContents = pluginContents.replace(/define\s*\(\s*([\[\{f])/, "define('" + builderName + "', $1");
+                } else {
+                    //This plugin can handle being the plugin builder too.
+                    //In this case need to eval the source as-is.
+                    evalSource = true;
+                    builderName = moduleName;
+                }
+            }
+
+            //Parse out the require and define calls.
+            //Do this even for plugins in case they have their own
+            //dependencies that may be separate to how the pluginBuilder works.
+            if (!evalSource) {
                 contents = parse(url, contents);
             }
 
             if (contents) {
-                //TODO: Change this to be more pluggable
-                //Convert order! dependencies to just regular dependencies,
-                //and make sure to require the order plugin.
-                orderRegExp.lastIndex = 0;
-                if (orderRegExp.test(contents)) {
-                    contents = contents.replace(orderRegExp, '');
-                    contents = "require(['require/order']);\n" + contents;
-                }
-
                 eval(contents);
 
                 //Support anonymous modules.
-                require.completeLoad(moduleName, context);
+                context.completeLoad(moduleName);
             }
 
-            // remember the list of dependencies for this layer - don't remember plugins
-            if (moduleName.indexOf("require/") !== 0) {
-	            layer.buildFilePaths.push(url);
-            }
+            // remember the list of dependencies for this layer.O
+            layer.buildFilePaths.push(url);
         }
 
         //Mark the module loaded.
         context.loaded[moduleName] = true;
-        require.checkLoaded(contextName);
+
+        //If there was a pluginBuilder, eval it now.
+        if (pluginContents) {
+            eval(pluginContents);
+        }
+        //Get a handle on the pluginBuilder
+        if (builderName) {
+            require.pluginBuilders[moduleName] = context.defined[builderName];
+        }
+    };
+
+    //This method is called when a plugin specifies a loaded value. Use
+    //this to track dependencies that do not go through require.load.
+    require.onPluginLoad = function (context, pluginName, name, value) {
+        var registeredName = pluginName + '!' + name;
+        layer.buildFilePaths.push(registeredName);
+        layer.buildFileToModule[registeredName] = registeredName;
+        layer.modulesWithNames[registeredName] = true;
     };
 
     //Override a method provided by require/text.js for loading text files as

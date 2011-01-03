@@ -9,6 +9,10 @@ This file assumes Java 1.6 or greater is installed:
 
 > java -jar ../build/lib/rhino/js.jar dist-site.js
 
+This site assumes that the dist-site/i directory from
+https://jrburke@github.com/jrburke/requirejs-branding.git
+are included in the final push to the web site.
+
 debugging:
 
 > java -classpath ../build/lib/rhino/js.jar org.mozilla.javascript.tools.debugger.Main dist-site.js
@@ -24,33 +28,36 @@ debugging:
 load("../build/jslib/logger.js");
 load("../build/jslib/fileUtil.js");
 
-var files, i, mdFile, htmlFile, fileContents,
+var files, i, htmlFile, transFile, fileContents,
     runtime = Packages.java.lang.Runtime.getRuntime(),
-    process, preContents, postContents, h1, homePath, cssPath, length, j, isTopPage = false;
+    process, preContents, postContents, h1, homePath, cssPath,
+    ieCssPath, jsPath, length, j, isTopPage = false;
 
 //Copy all the text files to a dist directory
-fileUtil.deleteFile("./dist-site/");
+//fileUtil.deleteFile("./dist-site/");
 fileUtil.copyFile("main.css", "./dist-site/main.css");
+fileUtil.copyFile("ie.css", "./dist-site/ie.css");
+fileUtil.copyFile("init.js", "./dist-site/init.js");
 fileUtil.copyDir("fonts", "./dist-site/fonts", /\w/);
-fileUtil.copyFile("../README.md", "./dist-site/index.md");
+fileUtil.copyFile("../index.html", "./dist-site/index.html");
 fileUtil.copyDir("../docs/", "./dist-site/docs/", /\w/);
 
 preContents = fileUtil.readFile("pre.html");
 postContents = fileUtil.readFile("post.html");
 
-//Convert each .md file to an HTML file
-files = fileUtil.getFilteredFileList("./dist-site", /\.md$/, true);
-for (i = 0; (mdFile = files[i]); i++) {
-    htmlFile = mdFile.replace(/\.md$/, ".html");
+//Convert each .html file to a full HTML file
+files = fileUtil.getFilteredFileList("./dist-site", /\.html$/, true);
+for (i = 0; (htmlFile = files[i]); i++) {
+    transFile = htmlFile + '.trans';
 
     logger.trace("Creating " + htmlFile);
 
     //Do Markdown
-    process = runtime.exec(["/bin/sh", "-c", "./Markdown.pl --html4tags " + mdFile + " > " + htmlFile]);
+    process = runtime.exec(["/bin/sh", "-c", "./Markdown.pl --html4tags " + htmlFile + " > " + transFile]);
     process.waitFor();
 
     //Build up a complete HTML file.
-    fileContents = fileUtil.readFile(htmlFile);
+    fileContents = fileUtil.readFile(transFile);
     fileContents = preContents + fileContents + postContents;
 
     //Set the title of the HTML page
@@ -73,6 +80,8 @@ for (i = 0; (mdFile = files[i]); i++) {
         isTopPage = true;
         homePath = "./";
         cssPath = "main.css";
+        ieCssPath = "ie.css";
+        jsPath = "init.js";
     } else {
         isTopPage = false;
         length = homePath.split("/").length;
@@ -81,9 +90,13 @@ for (i = 0; (mdFile = files[i]); i++) {
             homePath += "../";
         }
         cssPath = homePath + "main.css";
+        ieCssPath = homePath + "ie.css";
+        jsPath = homePath + "init.js";
     }
-    fileContents = fileContents.replace(/HOMEPATH/, homePath);
+    fileContents = fileContents.replace(/HOMEPATH/g, homePath);
     fileContents = fileContents.replace(/\main\.css/, cssPath);
+    fileContents = fileContents.replace(/\ie\.css/, ieCssPath);
+    fileContents = fileContents.replace(/\init\.js/, jsPath);
 
 
     //If it is the top page, adjust the header links
@@ -95,6 +108,5 @@ for (i = 0; (mdFile = files[i]); i++) {
 
     fileUtil.saveFile(htmlFile, fileContents);
 
-    //Remove the .md file
-    fileUtil.deleteFile(mdFile);
+    fileUtil.deleteFile(transFile);
 }
