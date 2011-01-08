@@ -86,11 +86,11 @@
     }
 
     define({
-        load: function (name, req, onLoad) {
+        load: function (name, req, onLoad, config) {
             var url = req.nameToUrl(name, null);
 
             //If a build, just load the module as usual.
-            if (require.isBuild) {
+            if (config.isBuild) {
                 loadResource(name, req, onLoad);
                 return;
             }

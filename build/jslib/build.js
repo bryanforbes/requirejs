@@ -20,7 +20,8 @@ var build, buildBaseConfig;
             paths: {},
             optimize: "closure",
             optimizeCss: "standard.keepLines",
-            inlineText: true
+            inlineText: true,
+            isBuild: true
         };
 
     build = function (args) {
@@ -597,10 +598,9 @@ var build, buildBaseConfig;
             //then delegate to that plugin.
             parts = context.makeModuleMap(moduleName);
             builder = parts.prefix && require.pluginBuilders[parts.prefix];
-
             if (builder) {
-                if (builder.onWrite) {
-                    builder.onWrite(parts.prefix, parts.name, function (input) {
+                if (builder.write) {
+                    builder.write(parts.prefix, parts.name, function (input) {
                         fileContents += input;
                     });
                 }
@@ -617,6 +617,7 @@ var build, buildBaseConfig;
                     deps = null;
                     if (suffix.indexOf('f') !== -1) {
                         deps = parse.getAnonDeps(path, currContents);
+
                         if (deps.length) {
                             deps = deps.map(function (dep) {
                                 return "'" + dep + "'";
