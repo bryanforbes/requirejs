@@ -72,12 +72,13 @@ var require, define;
 
     /**
      * Used to set up package paths from a packagePaths or packages config object.
-     * @param {Object} packages the object to store the new package config
+     * @param {Object} pkgs the object to store the new package config
      * @param {Array} currentPackages an array of packages to configure
      * @param {String} [dir] a prefix dir to use.
      */
-    function configurePackageDir(packages, currentPackages, dir) {
+    function configurePackageDir(pkgs, currentPackages, dir) {
         var i, location, pkgObj;
+
         for (i = 0; (pkgObj = currentPackages[i]); i++) {
             pkgObj = typeof pkgObj === "string" ? { name: pkgObj } : pkgObj;
             location = pkgObj.location;
@@ -85,16 +86,19 @@ var require, define;
             //Add dir to the path, but avoid paths that start with a slash
             //or have a colon (indicates a protocol)
             if (dir && (!location || (location.indexOf("/") !== 0 && location.indexOf(":") === -1))) {
-                pkgObj.location = dir + "/" + (pkgObj.location || pkgObj.name);
+                location = dir + "/" + (location || pkgObj.name);
             }
 
-            //Normalize package paths.
-            pkgObj.location = pkgObj.location || pkgObj.name;
-            pkgObj.lib = pkgObj.lib || "lib";
-            //Remove leading dot in main, so main paths are normalized.
-            pkgObj.main = (pkgObj.main || "lib/main").replace(currDirRegExp, '');
-
-            packages[pkgObj.name] = pkgObj;
+            //Create a brand new object on pkgs, since currentPackages can
+            //be passed in again, and config.pkgs is the internal transformed
+            //state for all package configs.
+            pkgs[pkgObj.name] = {
+                name: pkgObj.name,
+                location: location || pkgObj.name,
+                lib: pkgObj.lib || "lib",
+                //Remove leading dot in main, so main paths are normalized.
+                main: (pkgObj.main || "lib/main").replace(currDirRegExp, '')
+            };
         }
     }
 
@@ -126,7 +130,7 @@ var require, define;
                 waitSeconds: 7,
                 baseUrl: s.baseUrl || "./",
                 paths: {},
-                packages: {}
+                pkgs: {}
             },
             defQueue = [],
             specified = {
@@ -143,6 +147,7 @@ var require, define;
             managerCallbacks = {},
             plugins = {},
             pluginsQueue = {},
+            resumeDepth = 0,
             normalizedWaiting = {};
 
         /**
@@ -194,7 +199,7 @@ var require, define;
                 //otherwise, assume it is a top-level require that will
                 //be relative to baseUrl in the end.
                 if (baseName) {
-                    if (config.packages[baseName]) {
+                    if (config.pkgs[baseName]) {
                         //If the baseName is a package name, then just treat it as one
                         //name to concat the name with.
                         baseName = [baseName];
@@ -213,7 +218,7 @@ var require, define;
 
                     //Some use of packages may use a . path to reference the
                     //"main" module name, so normalize for that.
-                    pkgConfig = config.packages[(pkgName = name[0])];
+                    pkgConfig = config.pkgs[(pkgName = name[0])];
                     name = name.join("/");
                     if (pkgConfig && name === pkgName + '/' + pkgConfig.main) {
                         name = pkgName;
@@ -533,6 +538,7 @@ var require, define;
             var moduleMap = makeModuleMap(inName, relModuleMap),
                 name = moduleMap.name,
                 fullName = moduleMap.fullName,
+                uniques = {},
                 manager = {
                     //Use a wait ID because some entries are anon
                     //async require calls.
@@ -608,7 +614,8 @@ var require, define;
                     } else if (depName in defined && !(depName in waiting)) {
                         //Module already defined, no need to wait for it.
                         manager.deps[depName] = defined[depName];
-                    } else {
+                    } else if (!uniques[depName]) {
+
                         //A dynamic dependency.
                         manager.depMax += 1;
 
@@ -617,6 +624,8 @@ var require, define;
                         //Register to get notification when dependency loads.
                         (managerCallbacks[depName] ||
                         (managerCallbacks[depName] = [])).push(manager);
+
+                        uniques[depName] = true;
                     }
                 }
             }
@@ -828,7 +837,9 @@ var require, define;
                     prefix: dep.prefix,
                     name: dep.name,
                     fullName: dep.fullName,
-                    callback: ret
+                    callback: function () {
+                        return ret;
+                    }
                 });
                 loaded[fullName] = true;
             }, config);
@@ -893,6 +904,8 @@ var require, define;
         resume = function () {
             var args, i, p;
 
+            resumeDepth += 1;
+
             if (context.scriptCount <= 0) {
                 //Synchronous envs will push the number below zero with the
                 //decrement above, be sure to set it back to zero for good measure.
@@ -930,7 +943,16 @@ var require, define;
                 context.pausedCount -= p.length;
             }
 
-            checkLoaded();
+            //Only check if loaded when resume depth is 1. It is likely that
+            //it is only greater than 1 in sync environments where a factory
+            //function also then calls the callback-style require. In those
+            //cases, the checkLoaded should not occur until the resume
+            //depth is back at the top level.
+            if (resumeDepth === 1) {
+                checkLoaded();
+            }
+
+            resumeDepth -= 1;
 
             return undefined;
         };
@@ -960,7 +982,7 @@ var require, define;
              * @param {Object} cfg config object to integrate.
              */
             configure: function (cfg) {
-                var paths, packages, prop, packagePaths, requireWait;
+                var paths, prop, packages, pkgs, packagePaths, requireWait;
 
                 //Make sure the baseUrl ends in a slash.
                 if (cfg.baseUrl) {
@@ -973,6 +995,7 @@ var require, define;
                 //they are additive.
                 paths = config.paths;
                 packages = config.packages;
+                pkgs = config.pkgs;
 
                 //Mix in the config values, favoring the new values over
                 //existing ones in context.config.
@@ -994,18 +1017,18 @@ var require, define;
                     if (packagePaths) {
                         for (prop in packagePaths) {
                             if (!(prop in empty)) {
-                                configurePackageDir(packages, packagePaths[prop], prop);
+                                configurePackageDir(pkgs, packagePaths[prop], prop);
                             }
                         }
                     }
 
                     //Adjust packages if necessary.
                     if (cfg.packages) {
-                        configurePackageDir(packages, cfg.packages);
+                        configurePackageDir(pkgs, cfg.packages);
                     }
 
                     //Done with modifications, assing packages back to context config
-                    config.packages = packages;
+                    config.pkgs = pkgs;
                 }
 
                 //If priority loading is in effect, trigger the loads now
@@ -1183,8 +1206,7 @@ var require, define;
              * moduleName may actually be just an URL.
              */
             nameToUrl: function (moduleName, ext, relModuleMap) {
-
-                var paths, packages, pkg, pkgPath, syms, i, parentModule, url,
+                var paths, pkgs, pkg, pkgPath, syms, i, parentModule, url,
                     config = context.config;
 
                 if (moduleName.indexOf("./") === 0 || moduleName.indexOf("../") === 0) {
@@ -1215,7 +1237,7 @@ var require, define;
                     } else {
                         //A module that needs to be converted to a path.
                         paths = config.paths;
-                        packages = config.packages;
+                        pkgs = config.pkgs;
 
                         syms = moduleName.split("/");
                         //For each module name segment, see if there is a path
@@ -1226,7 +1248,7 @@ var require, define;
                             if (paths[parentModule]) {
                                 syms.splice(0, i, paths[parentModule]);
                                 break;
-                            } else if ((pkg = packages[parentModule])) {
+                            } else if ((pkg = pkgs[parentModule])) {
                                 //If module name is just the package name, then looking
                                 //for the main module.
                                 if (moduleName === pkg.name) {
