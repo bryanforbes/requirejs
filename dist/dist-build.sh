@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#@license RequireJS Copyright (c) 2010, The Dojo Foundation All Rights Reserved.
+#@license RequireJS Copyright (c) 2010-2011, The Dojo Foundation All Rights Reserved.
 #Available via the MIT or new BSD license.
 #see: http://github.com/jrburke/requirejs for details
 
@@ -10,6 +10,8 @@ if [ -z $version ]; then
     echo "Please pass in a version number"
     exit 1
 fi
+
+myDir=`cd \`dirname "$0"\`; pwd`
 
 jqueryName=jquery-1.4.4.js
 
@@ -56,12 +58,12 @@ cp dist/jquery-require-sample.zip ../../../$version
 
 # Create node integration layer
 cd ../../
-cd build/convert/node
-java -jar ../../lib/rhino/js.jar dist.js
-mkdir ../../../../$version/node
-cp r.js ../../../../$version/node
-cp index.js ../../../../$version/node
-cd ../../../
+cd adapt
+node dist.js
+mkdir ../../$version/node
+cp r.js ../../$version/
+cp index.js ../../$version/node
+cd ../
 
 # Minify any of the browser-based JS files
 cd ../$version/comments

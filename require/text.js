@@ -1,12 +1,11 @@
 /**
- * @license RequireJS text Copyright (c) 2010, The Dojo Foundation All Rights Reserved.
+ * @license RequireJS text Copyright (c) 2010-2011, The Dojo Foundation All Rights Reserved.
  * Available via the MIT or new BSD license.
  * see: http://github.com/jrburke/requirejs for details
  */
-/*jslint regexp: false, nomen: false, plusplus: false */
+/*jslint regexp: false, nomen: false, plusplus: false, strict: false */
 /*global require: false, XMLHttpRequest: false, ActiveXObject: false,
   define: false */
-"use strict";
 
 (function () {
     var progIds = ['Msxml2.XMLHTTP', 'Microsoft.XMLHTTP', 'Msxml2.XMLHTTP.4.0'],

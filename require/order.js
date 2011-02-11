@@ -1,12 +1,11 @@
 /**
- * @license RequireJS order Copyright (c) 2010, The Dojo Foundation All Rights Reserved.
+ * @license RequireJS order Copyright (c) 2010-2011, The Dojo Foundation All Rights Reserved.
  * Available via the MIT or new BSD license.
  * see: http://github.com/jrburke/requirejs for details
  */
-/*jslint nomen: false, plusplus: false */
+/*jslint nomen: false, plusplus: false, strict: false */
 /*global require: false, define: false, window: false, document: false,
   setTimeout: false */
-"use strict";
 
 (function () {
     //Sadly necessary browser inference due to differences in the way

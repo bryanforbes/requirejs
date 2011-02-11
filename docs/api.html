@@ -156,7 +156,7 @@ define(["./cart", "./inventory"], function(cart, inventory) {
         //return an object to define the "my/shirt" module.
         return {
             color: "blue",
-            size: "large"
+            size: "large",
             addToCart: function() {
                 inventory.decrement(this);
                 cart.add(this);
@@ -229,14 +229,30 @@ define(["my/cart", "my/inventory"],
 
 <h4><a name="modulenotes">Other Module Notes</a><span class="sectionMark">&sect; 1.2.6</span></h4>
 
-<p>Only one module should be defined per JavaScript file, given the nature of the module name-to-file-path lookup algorithm. Multiple modules will be grouped into optimized files by the <a href="optimization.html">optimization tool</a>, but you should only use the optimization tool to place more than one module in a file.</p>
+<p><strong>One module per file.</strong>: Only one module should be defined per JavaScript file, given the nature of the module name-to-file-path lookup algorithm. Multiple modules will be grouped into optimized files by the <a href="optimization.html">optimization tool</a>, but you should only use the optimization tool to place more than one module in a file.</p>
 
-<p>If you need to work with a module you already loaded via a require(["module/name"], function(){}) call in the JavaScript console, then you can use  the require() form that just uses the string name of the module to fetch it:</p>
+<p><strong>Relative module names inside define()</strong>: For require("./relative/name") calls that can happen inside a define() function call, be sure to ask for "require" as a dependency, so that the relative name is resolved correctly:</p>
+
+<pre><code>define(["require", "./relative/name"], function(require) {
+    var mod = require("./relative/name");
+});
+</code></pre>
+
+<p>Or better yet, use the shortened syntax that is available for use with <a href="commonjs.html">translating CommonJS</a> modules:</p>
+
+<pre><code>define(function(require) {
+    var mod = require("./relative/name");
+});
+</code></pre>
+
+<p>This form will use Function.prototype.toString() to find the require() calls, and add them to the dependency array, along with "require", so the code will work correctly with relative paths.</p>
+
+<p><strong>Console debugging</strong>: If you need to work with a module you already loaded via a require(["module/name"], function(){}) call in the JavaScript console, then you can use  the require() form that just uses the string name of the module to fetch it:</p>
 
 <pre><code>require("module/name").callSomeFunction()
 </code></pre>
 
-<p>Note this only works if "module/name" was previously loaded via the async version of require: require(["module/name"]).</p>
+<p>Note this only works if "module/name" was previously loaded via the async version of require: require(["module/name"]). If using a relative path, like './module/name', those only work inside define</p>
 </div>
 
 <div class="subSection">
@@ -422,6 +438,8 @@ define({
 
 <p>This use of JSONP should be limited to JSONP services for initial application setup. If the JSONP service times out, it means other modules you define via define() may not get executed, so the error handling is not robust.</p>
 
+<p><strong>Only JSONP return values that are JSON objects are supported</strong>. A JSONP response that is an array, a string or a number will not work.</p>
+
 <p>This functionality should not be used for long-polling JSONP connections -- APIs that deal with real time streaming. Those kinds of APIs should do more script cleanup after receiving each response, and RequireJS will only fetch a JSONP URL once -- subsequent uses of the same URL as a dependency in a require() or define() call will get a cached value.</p>
 
 <p>Errors in loading a JSONP service are normally surfaced via timeouts for the service, since script tag loading does not give much detail into network problems. To detect errors, you can override require.onError() to get errors. The error object passed to the onerror function will contain two properties if it is a timeout issue:</p>
@@ -475,7 +493,7 @@ define({
 <pre><code>&lt;script type="text/javascript" src="scripts/require.js"&gt;&lt;/script&gt;
 &lt;script type="text/javascript"&gt;
   require({
-          baseUrl: "/another/path/",
+          baseUrl: "/another/path",
           paths: {
               "some": "some/v1.0"
           },
@@ -520,11 +538,6 @@ define({
 <p><strong>baseUrl</strong>: the root path to use for all module lookups. So in the above example, "my/module"'s script tag will have a src="/another/path/my/module.js". baseUrl is <strong>not</strong> used when loading plain .js files, those strings are used as-is, so a.js and b.js will be loaded from the same directory as the HTML page that contains the above snippet.</p>
 
 <p>If no baseUrl is passed in, the path to require.js is used as the baseUrl path. The baseUrl can be an URL on a different domain as the page that will load require.js. RequireJS script loading works across domains. The only restriction is on text content loaded by text! plugins: those paths should be on the same domain as the page, at least during development. The optimization tool will inline text! plugin resources so after using the optimization tool, you can use resources that reference text! plugin resources from another domain.</p>
-
-<p><strong>baseUrlMatch</strong>: If no baseUrl is specified, normally the path to require.js is used. However, if you build RequireJS into another file with a name that does not have "require.js" in it, then the autodetection of the baseUrl will fail. In that case you can set baseUrlMatch to match the name of the file you built. The value should be a Regular expression. For example:</p>
-
-<pre><code>baseUrlMatch: /mycustomlib\.js/i
-</code></pre>
 
 <p><strong>paths</strong>: allows configuration of some modules paths. Assumed to be relative to baseUrl. So for "some/module"'s script tag will have a src="/another/path/some/v1.0/module.js". The path that is used for a module name should <strong>not</strong> include the .js extension, since the path mapping could be for a directory. The path mapping code will automatically add the .js extension when mapping the module name to a path.</p>
 
@@ -813,7 +826,7 @@ function (alpha,   omega,   cart,   store,   util) {
 &lt;script type="text/javascript"&gt;
 require({
       context: "version1",
-      baseUrl: "version1/"
+      baseUrl: "version1"
     },
     ["require", "alpha", "beta",],
     function(require, alpha, beta) {
@@ -833,7 +846,7 @@ require({
 
 require({
       context: "version2",
-      baseUrl: "version2/"
+      baseUrl: "version2"
     },
     ["require", "alpha", "beta"],
     function(require, alpha, beta) {
@@ -869,12 +882,14 @@ require({
 
 <h3><a name="rhino">Rhino Support</a><span class="sectionMark">&sect; 5.5</span></h3>
 
-<p>RequireJS can be used in Rhino, just be sure to load require.js and require/rhino.js before doing any require calls:</p>
+<p>RequireJS can be used in Rhino via the <a href="download.html#node">r.js adapter</a>. Run it like so:</p>
 
-<pre><code>load("requirejs/require.js");
-load("requirejs/require/rhino.js");
+<pre><code>java -jar path/to/rhino/js.jar r.js main.js
+</code></pre>
 
-//Set up any config values, baseUrl is required so module names
+<p>Where main.js has contents that look like this:</p>
+
+<pre><code>//Set up any config values, baseUrl is required so module names
 //will map correctly to paths.
 require({
     baseUrl: 'path/to/scripts'
@@ -884,5 +899,5 @@ require({
 require(['startingscript']);
 </code></pre>
 
-<p>You can see an example of RequireJS working in Rhino by looking at <a href="http://github.com/jrburke/requirejs/blob/master/tests/all-rhino.js">tests/all-rhino.js</a>. The test file is a bit different from above since each test sets its own baseUrl.</p>
+<p>You can see an example of RequireJS working in Rhino by looking at <a href="http://github.com/jrburke/requirejs/blob/master/adapt/tests/all.js">adapt/tests/all.js</a>.</p>
 </div>
